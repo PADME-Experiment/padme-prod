@@ -15,9 +15,9 @@ from PadmeMCDB import PadmeMCDB
 from ProxyHandler import ProxyHandler
 #from Logger import Logger
 
-# Get location of padme-fw software from PADME
-# Default to HOME/padme-fw (or ~/padme-fw) if not set
-PADME_FW = os.getenv('PADME',"%s/padme-fw"%os.getenv('HOME',"~"))
+# Get location of padme-prod software from PADME_PROD env variable
+# Default to ./padme-prod if not set
+PADME_PROD = os.getenv('PADME_PROD',"./padme-prod")
 
 # Create global handler to PadmeMCDB
 DB = PadmeMCDB()
@@ -39,8 +39,8 @@ PADME_ROOT_URI = {
 
 # List of available submission sites and corresponding CE nodes
 PADME_CE_NODE = {
-    #"LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme",
-    "LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
+    "LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme",
+    #"LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
     "CNAF":  "ce04-lcg.cr.cnaf.infn.it:8443/cream-lsf-padme",
     "SOFIA": "cream.grid.uni-sofia.bg:8443/cream-pbs-cms"
 }
@@ -51,7 +51,7 @@ PROD_NAME = ""
 PROD_FILES_PER_JOB = 100
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
-PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_FW
+PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_PROD
 PROD_CE = PADME_CE_NODE["LNF"]
 PROD_SRM = PADME_SRM_URI["LNF"]
 PROD_RECO_VERSION = "develop"
