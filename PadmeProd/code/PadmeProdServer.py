@@ -127,11 +127,11 @@ class PadmeProdServer:
             if job_status == 4 or job_status == 5 or job_status == 6:
                 jobs_fail += 1
                 continue
-            if job_status == 7:
-                jobs_undef += 1
-                continue
+            #if job_status == 7:
+            #    jobs_undef += 1
+            #    continue
     
-            # Last time job was idle or active: check if its status changed
+            # Last time job was idle, active or undef: check if its status changed
             job_ce_status = self.get_job_ce_status(ce_job_id)
             print "- %s %s %s"%(job_name,ce_job_id,job_ce_status)
             if job_ce_status == "PENDING" or job_ce_status == "REGISTERED" or job_ce_status == "IDLE":
@@ -155,6 +155,8 @@ class PadmeProdServer:
             elif job_ce_status == "UNDEF":
                 self.db.set_job_status(job_id,7)
                 jobs_undef += 1
+            else:
+                print "  WARNING - unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
            
         return (jobs_submitted,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_undef)
     

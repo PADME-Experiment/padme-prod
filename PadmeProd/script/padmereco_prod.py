@@ -75,19 +75,20 @@ def main(argv):
     # Run job script sending its output/error to stdout/stderr
     print "Program starting at %s (UTC)"%now_str()
     job_cmd = "/bin/bash job.sh"
-    rc = subprocess.call(job_cmd.split())
+    rc_reco = subprocess.call(job_cmd.split())
     print "Program ending at %s (UTC)"%now_str()
 
-    print "PADMERECO program ended with return code %s"%rc
+    print "PADMERECO program ended with return code %s"%rc_reco
 
-    if rc == 0:
+    # Obtain new VOMS proxy from long-lived proxy
+    # This is needed both to save output root file to SE and to recover the final log/err files
+    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org"%(proxy_file,proxy_file)
+    print ">",proxy_cmd
+    rc = subprocess.call(proxy_cmd.split())
+
+    if rc_reco == 0:
 
         print "--- Saving output files ---"
-
-        # Obtain new VOMS proxy from long-lived proxy
-        proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org"%(proxy_file,proxy_file)
-        print ">",proxy_cmd
-        rc = subprocess.call(proxy_cmd.split())
 
         if os.path.exists(output_file):
 
