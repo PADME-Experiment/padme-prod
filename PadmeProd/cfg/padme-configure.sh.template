@@ -1,0 +1,64 @@
+# This is a template configuration file to be modified and copied to the config directory
+# of the software package installed on CVMFS
+PROBLEMS=0
+
+if [ -f /etc/system-release ]; then
+
+    ISSLC6=$( cat /etc/system-release | grep "Scientific Linux" | grep "release 6" )
+    if [ ! -z "$ISSLC6" ]; then
+        echo "Running under Scientific Linux 6"
+	OS_VERSION="slc6"
+    fi
+
+    ISCENTOS7=$( cat /etc/system-release | grep "CentOS Linux" | grep "release 7" )
+    if [ ! -z "$ISCENTOS7" ]; then
+        echo "Running under CentOS 7"
+	OS_VERSION="centos7"
+    fi
+
+    if [ -z "$OS_VERSION" ]; then
+	cat /etc/system-release
+	echo "Unknown operative system version. Aborting"
+	PROBLEMS=1
+    fi
+else
+    echo "File /etc/system-release not found. Unable to verify OS. Aborting"
+    PROBLEMS=1
+fi
+
+if [ $PROBLEMS -eq 0 ]; then
+
+    if [ $OS_VERSION == "slc6" ]; then
+	SCRIPT_GCC=/cvmfs/sft.cern.ch/lcg/releases/LCG_87/gcc/4.9.3/x86_64-slc6/setup.sh
+	SCRIPT_ROOT=/cvmfs/sft.cern.ch/lcg/app/releases/ROOT/5.34.36/x86_64-slc6-gcc49-opt/root/bin/thisroot.sh
+    fi
+
+    if [ $OS_VERSION == "centos7" ]; then
+	SCRIPT_GCC=/cvmfs/sft.cern.ch/lcg/contrib/gcc/4.9/x86_64-centos7-gcc49-opt/setup.sh
+	SCRIPT_ROOT=/cvmfs/sft.cern.ch/lcg/app/releases/ROOT/5.34.36/x86_64-centos7-gcc49-opt/root/bin/thisroot.sh
+    fi
+
+    # Look for gcc configuration script
+    if [ ! -f $SCRIPT_GCC ]; then
+        echo "ERROR - File $SCRIPT_GCC not found. Aborting"
+        PROBLEMS=1
+    fi
+
+    # Look for ROOT configuration script
+    if [ ! -f $SCRIPT_ROOT ]; then
+        echo "ERROR - File $SCRIPT_ROOT not found. Aborting"
+        PROBLEMS=1
+    fi
+
+fi
+
+if [ $PROBLEMS -eq 0 ]; then
+
+    . $SCRIPT_GCC
+    . $SCRIPT_ROOT
+
+    PADME=$( dirname $( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd ) )
+    export PADMERECO_EXE=$PADME/$OS_VERSION/bin/PadmeReco
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PADME/$OS_VERSION/lib
+
+fi

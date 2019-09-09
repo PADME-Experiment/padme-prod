@@ -3,9 +3,13 @@
 import os
 import sys
 import getopt
+import signal
 import time
 import subprocess
 import shutil
+
+PROXY_FILE = ""
+PROXY_RENEW_TIME = 6*3600
 
 def now_str():
 
@@ -17,14 +21,30 @@ def get_adler32(outfile):
     p = subprocess.Popen(adler_cmd.split(),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     return p.communicate()[0].strip()
 
+def renew_proxy_handler(signum,frame):
+
+    global PROXY_FILE
+    global PROXY_RENEW_TIME
+
+    # Obtain new VOMS proxy from long-lived proxy
+    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org"%(PROXY_FILE,PROXY_FILE)
+    print ">",proxy_cmd
+    rc = subprocess.call(proxy_cmd.split())
+
+    # Reset alarm
+    signal.alarm(PROXY_RENEW_TIME)
+
 def main(argv):
+
+    global PROXY_FILE
+    global PROXY_RENEW_TIME
 
     # Top CVMFS directory for PadmeReco
     padmereco_cvmfs_dir = "/cvmfs/padme.infn.it/PadmeReco"
 
     output_file = "data.root"
 
-    (input_list,proxy_file,prod_name,job_name,reco_version,storage_dir,srm_uri) = argv
+    (input_list,PROXY_FILE,prod_name,job_name,reco_version,storage_dir,srm_uri) = argv
 
     job_dir = os.getcwd()
 
@@ -36,10 +56,10 @@ def main(argv):
     print "SRM server URI",srm_uri
     print "Storage directory",storage_dir
     print "Input file list",input_list
-    print "Proxy file",proxy_file
+    print "Proxy file",PROXY_FILE
 
     # Change permission rights for long-lived proxy (must be 600)
-    os.chmod(proxy_file,0600)
+    os.chmod(PROXY_FILE,0600)
 
     # Check if software directory for this version is available
     padmereco_version_dir = "%s/%s"%(padmereco_cvmfs_dir,reco_version)
@@ -60,6 +80,10 @@ def main(argv):
         print "ERROR File %s not found"%padmereco_init_file
         exit(2)
 
+    # Enable timer to renew VOMS proxy every 6h
+    signal.signal(signal.SIGALRM,renew_proxy_handler)
+    signal.alarm(PROXY_RENEW_TIME)
+
     # Prepare shell script to run PadmeReco
     sf = open("job.sh","w")
     sf.write("#!/bin/bash\n")
@@ -79,12 +103,6 @@ def main(argv):
     print "Program ending at %s (UTC)"%now_str()
 
     print "PADMERECO program ended with return code %s"%rc_reco
-
-    # Obtain new VOMS proxy from long-lived proxy
-    # This is needed both to save output root file to SE and to recover the final log/err files
-    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org"%(proxy_file,proxy_file)
-    print ">",proxy_cmd
-    rc = subprocess.call(proxy_cmd.split())
 
     if rc_reco == 0:
 

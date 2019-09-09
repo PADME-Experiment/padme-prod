@@ -40,7 +40,7 @@ PADME_ROOT_URI = {
 # List of available submission sites and corresponding CE nodes
 PADME_CE_NODE = {
     "LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme",
-    #"LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
+    "LNF2":  "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
     "CNAF":  "ce04-lcg.cr.cnaf.infn.it:8443/cream-lsf-padme",
     "SOFIA": "cream.grid.uni-sofia.bg:8443/cream-pbs-cms"
 }
@@ -67,8 +67,8 @@ def print_help():
     print "  <padmereco_version>\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: develop"
     print "  <prod_name>\t\tname for the production. Default: <run_name>_<padmereco_version>"
     print "  <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
-    print "  <submission_site>\tsite where the jobs will be submitted. Allowed: LNF,CNAF. Default: LNF"
-    print "  <storage_site>\tsite where the jobs output will be stored. Allowed: LNF,CNAF. Default: LNF"
+    print "  <submission_site>\tsite where the jobs will be submitted. Allowed: %s. Default: LNF"%(",".join(PADME_CE_NODE.keys()))
+    print "  <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: LNF"%(",".join(PADME_SRM_URI.keys()))
 
 def run_command(command):
     print "> %s"%command
