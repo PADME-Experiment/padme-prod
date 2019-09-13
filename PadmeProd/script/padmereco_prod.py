@@ -27,7 +27,7 @@ def renew_proxy_handler(signum,frame):
     global PROXY_RENEW_TIME
 
     # Obtain new VOMS proxy from long-lived proxy
-    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org"%(PROXY_FILE,PROXY_FILE)
+    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(PROXY_FILE,PROXY_FILE)
     print ">",proxy_cmd
     rc = subprocess.call(proxy_cmd.split())
 
@@ -61,11 +61,16 @@ def main(argv):
     # Change permission rights for long-lived proxy (must be 600)
     os.chmod(PROXY_FILE,0600)
 
-    # Check if software directory for this version is available
+    # Check if software directory for this version is available on CVMFS (try a few times before giving up)
     padmereco_version_dir = "%s/%s"%(padmereco_cvmfs_dir,reco_version)
-    if not os.path.isdir(padmereco_version_dir):
-        print "ERROR Directory %s not found"%padmereco_version_dir
-        exit(2)
+    n_try = 0
+    while not os.path.isdir(padmereco_version_dir):
+        n_try += 1
+        if n_try >= 5:
+            print "ERROR Directory %s not found"%padmereco_version_dir
+            exit(2)
+        print "WARNING Directory %s not found (%d) - Pause and try again"%(padmereco_version_dir,n_try)
+        time.sleep(5)
 
     # Create local soft link to the config directory
     config_dir = "%s/config"%padmereco_version_dir
@@ -127,7 +132,7 @@ def main(argv):
 
         else:
 
-            print "WARNING File data.root does not exist in current directory"
+            print "WARNING File %s does not exist in current directory"%output_file
 
     else:
 

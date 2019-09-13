@@ -195,18 +195,19 @@ def main(argv):
     print "- Creating production dir",PROD_DIR
     os.mkdir(PROD_DIR)
 
-    # Create long-lived (20 days) proxy. Will ask user for password
+    # Create long-lived (30 days) proxy. Will ask user for password
     PROD_PROXY_FILE = "%s/job.proxy"%PROD_DIR
     print "- Creating long-lived proxy file",PROD_PROXY_FILE
-    proxy_cmd = "voms-proxy-init --valid 480:0 --out %s"%PROD_PROXY_FILE
+    proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%PROD_PROXY_FILE
     print ">",proxy_cmd
     if subprocess.call(proxy_cmd.split()):
         print "*** ERROR *** while generating long-lived proxy. Aborting"
         shutil.rmtree(PROD_DIR)
         sys.exit(2)
 
-    # Renew VOMS proxy using long-lived proxy if needed
-    PH.renew_voms_proxy(PROD_PROXY_FILE)
+    # Create a new VOMS proxy using long-lived proxy
+    #PH.renew_voms_proxy(PROD_PROXY_FILE)
+    PH.create_voms_proxy(PROD_PROXY_FILE)
 
     # Get list of files for run to reconstruct
     # All files are assumed to be on the LNF SE and available via the ROOTX protocol

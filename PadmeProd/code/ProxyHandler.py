@@ -22,6 +22,12 @@ class ProxyHandler:
             if r and int(r.group(1))>=2: renew = False
 
         if renew:
-            print "- VOMS proxy is missing or will expire in less than 2 hours. Renewing it using %s"%long_proxy_file
-            cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(long_proxy_file,long_proxy_file)
-            for line in self.run_command(cmd): print(line.rstrip())
+            print "- VOMS proxy is missing or will expire in less than 2 hours."
+            self.create_voms_proxy(long_proxy_file)
+
+    def create_voms_proxy(self,long_proxy_file):
+
+        # Create a 24h VOMS proxy from long lived proxy
+        print "- Creating VOMS proxy using %s"%long_proxy_file
+        cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(long_proxy_file,long_proxy_file)
+        for line in self.run_command(cmd): print(line.rstrip())
