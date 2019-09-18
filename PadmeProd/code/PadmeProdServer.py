@@ -36,7 +36,7 @@ class PadmeProdServer:
     
         # Get some info about this prod
         (dummy,prod_ce,prod_dir,proxy_file,prod_njobs) = self.db.get_prod_info(prod_id)
-    
+
         # Check if production dir exists
         if not os.path.isdir(prod_dir):
             print "*** ERROR *** Production directory '%s' not found"%prod_dir
@@ -58,6 +58,13 @@ class PadmeProdServer:
         if len(job_id_list) != prod_njobs:
             print "*** ERROR *** Number of jobs in DB and in production are different: %s != %s"%(len(job_id_list),prod_njobs)
             sys.exit(2)
+
+        # Extract CE endpoint and register it for proxy renewal
+        r = re.match("^(.*)/.*$",prod_ce)
+        if r:
+            self.ph.cream_ce_endpoint = r.group(1)
+        else:
+            print "WARNING Unable to extract CE endpoint from production CE %s"%prod_ce
     
         print "=== Starting Production %s ==="%self.prod_name
     
@@ -69,10 +76,13 @@ class PadmeProdServer:
             self.ph.renew_voms_proxy(proxy_file)
     
             # Call method to check jobs status and handle each job accordingly
-            (jobs_submitted,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs(prod_ce,job_id_list)
+            (jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef) = self.handle_jobs(prod_ce,job_id_list)
     
+            # Show current production state
+            print "Jobs: submitted %d idle %d running %d success %d fail %d cancel %d undef %d"%(jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
+
             # If all jobs are in a final state, production is over
-            if jobs_submitted+jobs_idle+jobs_active+jobs_undef == 0:
+            if jobs_submit+jobs_idle+jobs_active+jobs_undef == 0:
                 print "*** No unfinished jobs left: exiting ***"
                 break
 
@@ -87,8 +97,7 @@ class PadmeProdServer:
                     print "*** More than 10 consecutive iterations with jobs in UNDEF state: exiting ***"
                     break
     
-            # Show current production state and sleep for a while
-            print "Jobs: submitted %d idle %d running %d success %d fail %d undef %d"%(jobs_submitted,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_undef)
+            # Sleep for a while
             time.sleep(self.prod_check_delay)
     
         # Production is over: get total events, tag production as done and say bye bye
@@ -100,15 +109,30 @@ class PadmeProdServer:
     
     def handle_jobs(self,prod_ce,job_id_list):
     
-        jobs_submitted = 0
+        jobs_submit = 0
         jobs_idle = 0
         jobs_active = 0
         jobs_success = 0
         jobs_fail = 0
+        jobs_cancel = 0
         jobs_undef = 0
+
+        # Reset proxy delegations array
+        self.ph.delegations = []
     
         print "--- Checking status of production jobs ---"
     
+        # Job status in DB:
+        # 0: Unsubmitted
+        # 1: Submitted (PENDING, REGISTERED, IDLE)
+        # 2: Active (RUNNING, REALLY-RUNNING)
+        # 3: Successful (DONE-OK and finalized)
+        # 4: Unsuccessful (DONE-OK and NOT finalized)
+        # 5: Failed (DONE-FAILED and finalized)
+        # 6: Failed (DONE-FAILED and NOT finalized)
+        # 7: Cancelled (CANCELLED)
+        # 8: Undefined
+
         for job_id in job_id_list:
     
             (job_name,job_status,job_dir,ce_job_id) = self.db.get_job_info(job_id)
@@ -117,23 +141,38 @@ class PadmeProdServer:
             if job_status == 0:
                 ce_job_id = self.submit_job(job_id,job_dir,prod_ce)
                 print "- %s %s SUBMITTED"%(job_name,ce_job_id)
-                jobs_submitted += 1
+                jobs_submit += 1
                 continue
     
             # If job is already in final status, just count it
             if job_status == 3:
+                print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output OK")
                 jobs_success += 1
                 continue
-            if job_status == 4 or job_status == 5 or job_status == 6:
+            if job_status == 4:
+                print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output Fail")
                 jobs_fail += 1
                 continue
-            #if job_status == 7:
-            #    jobs_undef += 1
-            #    continue
+            if job_status == 5:
+                print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output OK")
+                jobs_fail += 1
+                continue
+            if job_status == 6:
+                print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output Fail")
+                jobs_fail += 1
+                continue
+            if job_status == 7:
+                print "- %s %s %s"%(job_name,ce_job_id,"CANCELLED")
+                jobs_cancel += 1
+                continue
     
-            # Last time job was idle, active or undef: check if its status changed
-            #job_ce_status = self.get_job_ce_status(ce_job_id)
-            (job_ce_status,job_worker_node,job_local_user) = self.get_job_ce_status(ce_job_id)
+            # Last time job was idle, active or undef: get current job status
+            (job_ce_status,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
+
+            # Register job delegation for proxy renewals
+            self.ph.delegations.append(job_delegation)
+
+            # Check if its status changed
             print "- %s %s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
             if job_ce_status == "PENDING" or job_ce_status == "REGISTERED" or job_ce_status == "IDLE":
                 jobs_idle += 1
@@ -153,13 +192,16 @@ class PadmeProdServer:
                 else:
                     self.db.set_job_status(job_id,6)
                 jobs_fail += 1
-            elif job_ce_status == "UNDEF":
+            elif job_ce_status == "CANCELLED":
+                jobs_cancel += 1
                 self.db.set_job_status(job_id,7)
+            elif job_ce_status == "UNDEF":
+                self.db.set_job_status(job_id,8)
                 jobs_undef += 1
             else:
                 print "  WARNING - unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
            
-        return (jobs_submitted,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_undef)
+        return (jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
     
     def submit_job(self,job_id,job_dir,prod_ce):
     
@@ -202,6 +244,7 @@ class PadmeProdServer:
         status = "UNDEF"
         worker_node = "UNKNOWN"
         local_user = "UNKNOWN"
+        delegation = ""
         for l in status_info:
             r = re.match("^\s*Current Status\s+=\s+\[(.+)\].*$",l)
             if r: status = r.group(1)
@@ -209,7 +252,9 @@ class PadmeProdServer:
             if r: worker_node = r.group(1)
             r = re.match("^\s*Local User\s+=\s+\[(.+)\].*$",l)
             if r: local_user = r.group(1)
-        return (status,worker_node,local_user)
+            r = re.match("^\s*Deleg Proxy ID\s+=\s+\[(.+)\].*$",l)
+            if r: delegation = r.group(1)
+        return (status,worker_node,local_user,delegation)
   
     def finalize_job(self,job_id,job_name,ce_job_id):
     
@@ -225,45 +270,51 @@ class PadmeProdServer:
         getout_cmd = "glite-ce-job-output -N %s"%ce_job_id
         print "\t> %s"%getout_cmd
         rc = subprocess.call(getout_cmd.split())
-
-        purge_job = True
     
         # Get name of dir where output files are stored from the ce_job_id
         out_dir = ce_job_id[8:].replace(":","_").replace("/","_")
-    
+
+        # Check if job output dir exists
+        if not os.path.isdir(out_dir):
+            print "WARNING Job output dir %s not found"%out_dir
+            return False
+
         # Recover files from output directory and move them to job directory
         print "\tExtracting output files from dir %s"%out_dir
-        if os.path.isdir(out_dir):
     
-            out_file = "%s/job.out"%out_dir
-            if os.path.exists(out_file):
-                os.rename(out_file,"./job.out")
-            else:
-                purge_job = False
-                print "WARNING File %s not found"%out_file
-    
-            err_file = "%s/job.err"%out_dir
-            if os.path.exists(err_file):
-                os.rename(err_file,"./job.err")
-            else:
-                purge_job = False
-                print "WARNING File %s not found"%err_file
-    
-            sh_file = "%s/job.sh"%out_dir
-            if os.path.exists(sh_file):
-                os.rename(sh_file,"./job.sh")
-            else:
-                purge_job = False
-                print "WARNING File %s not found"%sh_file
-    
-        # If all output was correctly retrieved job can be purged
-        if purge_job:
-            print "\tPurging job from CE"
-            purge_job_cmd = "glite-ce-job-purge -N %s"%ce_job_id
-            print "\t> %s"%purge_job_cmd
-            rc = subprocess.call(purge_job_cmd.split())
+        output_ok = True
+
+        out_file = "%s/job.out"%out_dir
+        if os.path.exists(out_file):
+            os.rename(out_file,"./job.out")
         else:
+            output_ok = False
+            print "WARNING File %s not found"%out_file
+    
+        err_file = "%s/job.err"%out_dir
+        if os.path.exists(err_file):
+            os.rename(err_file,"./job.err")
+        else:
+            output_ok = False
+            print "WARNING File %s not found"%err_file
+    
+        sh_file = "%s/job.sh"%out_dir
+        if os.path.exists(sh_file):
+            os.rename(sh_file,"./job.sh")
+        else:
+            output_ok = False
+            print "WARNING File %s not found"%sh_file
+
+        # There was a problem retrieving output files: return an error
+        if not output_ok:
             print "WARNING Problems while retrieving job output files: job will not be purged from CE"
+            return False
+
+        # Output was correctly retrieved: job can be purged
+        print "\tPurging job from CE"
+        purge_job_cmd = "glite-ce-job-purge -N %s"%ce_job_id
+        print "\t> %s"%purge_job_cmd
+        rc = subprocess.call(purge_job_cmd.split())
 
         # Scan log file looking for some information
         time_start = ""
