@@ -40,7 +40,7 @@ PADME_ROOT_URI = {
 # List of available submission sites and corresponding CE nodes
 PADME_CE_NODE = {
     "LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme",
-    #"LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
+    "LNF2":  "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
     "CNAF":  "ce04-lcg.cr.cnaf.infn.it:8443/cream-lsf-padme",
     "SOFIA": "cream.grid.uni-sofia.bg:8443/cream-pbs-cms"
 }
@@ -67,8 +67,8 @@ def print_help():
     print "  <padmereco_version>\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: develop"
     print "  <prod_name>\t\tname for the production. Default: <run_name>_<padmereco_version>"
     print "  <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
-    print "  <submission_site>\tsite where the jobs will be submitted. Allowed: LNF,CNAF. Default: LNF"
-    print "  <storage_site>\tsite where the jobs output will be stored. Allowed: LNF,CNAF. Default: LNF"
+    print "  <submission_site>\tsite where the jobs will be submitted. Allowed: %s. Default: LNF"%(",".join(PADME_CE_NODE.keys()))
+    print "  <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: LNF"%(",".join(PADME_SRM_URI.keys()))
 
 def run_command(command):
     print "> %s"%command
@@ -195,18 +195,19 @@ def main(argv):
     print "- Creating production dir",PROD_DIR
     os.mkdir(PROD_DIR)
 
-    # Create long-lived (20 days) proxy. Will ask user for password
+    # Create long-lived (30 days) proxy. Will ask user for password
     PROD_PROXY_FILE = "%s/job.proxy"%PROD_DIR
     print "- Creating long-lived proxy file",PROD_PROXY_FILE
-    proxy_cmd = "voms-proxy-init --valid 480:0 --out %s"%PROD_PROXY_FILE
+    proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%PROD_PROXY_FILE
     print ">",proxy_cmd
     if subprocess.call(proxy_cmd.split()):
         print "*** ERROR *** while generating long-lived proxy. Aborting"
         shutil.rmtree(PROD_DIR)
         sys.exit(2)
 
-    # Renew VOMS proxy using long-lived proxy if needed
-    PH.renew_voms_proxy(PROD_PROXY_FILE)
+    # Create a new VOMS proxy using long-lived proxy
+    #PH.renew_voms_proxy(PROD_PROXY_FILE)
+    PH.create_voms_proxy(PROD_PROXY_FILE)
 
     # Get list of files for run to reconstruct
     # All files are assumed to be on the LNF SE and available via the ROOTX protocol

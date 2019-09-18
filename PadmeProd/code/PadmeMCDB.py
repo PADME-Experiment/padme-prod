@@ -99,6 +99,18 @@ class PadmeMCDB:
         c.execute("""UPDATE production SET time_end = %s, n_jobs_ok = %s, n_events = %s WHERE id = %s""",(time_end,n_jobs_ok,n_events,pid))
         self.conn.commit()
 
+    def get_prod_total_events(self,prod_id):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""SELECT n_events FROM job WHERE production_id = %s""",(prod_id,))
+        res = c.fetchall()
+        self.conn.commit()
+
+        total_events = 0
+        for n in res: total_events += int(n[0])
+        return total_events
+
     def get_prod_id(self,name):
 
         self.check_db()
@@ -126,6 +138,7 @@ class PadmeMCDB:
         c.execute("""SELECT id FROM job WHERE production_id=%s""",(prod_id,))
         res = c.fetchall()
         self.conn.commit()
+
         job_list = []
         for j in res: job_list.append(j[0])
         return job_list    
@@ -221,6 +234,20 @@ class PadmeMCDB:
         self.check_db()
         c = self.conn.cursor()
         c.execute("""UPDATE job SET worker_node = %s WHERE id = %s""",(worker_node,job_id))
+        self.conn.commit()
+
+    def set_job_n_files(self,job_id,n_files):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET n_files = %s WHERE id = %s""",(n_files,job_id))
+        self.conn.commit()
+
+    def set_job_n_events(self,job_id,n_events):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET n_events = %s WHERE id = %s""",(n_events,job_id))
         self.conn.commit()
 
     def create_job_file(self,job_id,file_name,file_type,seq_n,n_events,size,adler32):
