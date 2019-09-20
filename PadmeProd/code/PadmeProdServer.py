@@ -102,7 +102,7 @@ class PadmeProdServer:
     
         # Production is over: get total events, tag production as done and say bye bye
         n_events = self.db.get_prod_total_events(prod_id)
-        self.db.close_prod(prod_id,self.now_str(),jobs_success,n_events)
+        self.db.close_prod(prod_id,jobs_success,n_events)
     
         print "=== Ending Production %s ==="%self.prod_name
         sys.exit(0)
@@ -135,71 +135,88 @@ class PadmeProdServer:
 
         for job_id in job_id_list:
     
-            (job_name,job_status,job_dir,ce_job_id) = self.db.get_job_info(job_id)
+            (job_name,job_dir,job_status) = self.db.get_job_info(job_id)
     
-            # If status is 0, job was not submitted yet: do it now and get updated information
+            # If status is 0, job was not submitted yet: do it now
             if job_status == 0:
-                ce_job_id = self.submit_job(job_id,job_dir,prod_ce)
+                (job_sub_id,ce_job_id) = self.submit_job(job_id,job_dir,prod_ce)
                 print "- %s %s SUBMITTED"%(job_name,ce_job_id)
+                self.db.set_job_status(job_id,1)
                 jobs_submit += 1
                 continue
-    
-            # If job is already in final status, just count it
-            if job_status == 3:
+
+            # Get info about associated job submission
+            job_sub_id = self.db.get_job_submit_id(job_id)
+            (job_sub_index,job_sub_status,ce_job_id,worker_node,wn_user) = self.db.get_job_submit_info(job_sub_id)
+
+            # Status 2: Job was successful
+            if job_status == 2:
                 print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output OK")
                 jobs_success += 1
                 continue
-            if job_status == 4:
-                print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output Fail")
-                jobs_fail += 1
-                continue
-            if job_status == 5:
-                print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output OK")
-                jobs_fail += 1
-                continue
-            if job_status == 6:
-                print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output Fail")
-                jobs_fail += 1
-                continue
-            if job_status == 7:
-                print "- %s %s %s"%(job_name,ce_job_id,"CANCELLED")
-                jobs_cancel += 1
-                continue
-    
-            # Last time job was idle, active or undef: get current job status
-            (job_ce_status,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
 
-            # Register job delegation for proxy renewals
-            self.ph.delegations.append(job_delegation)
-
-            # Check if its status changed
-            print "- %s %s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
-            if job_ce_status == "PENDING" or job_ce_status == "REGISTERED" or job_ce_status == "IDLE":
-                jobs_idle += 1
-            elif job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING":
-                jobs_active += 1
-                if job_status == 1: self.db.set_job_status(job_id,2)
-            elif job_ce_status == "DONE-OK":
-                if self.finalize_job(job_id,job_name,ce_job_id):
-                    self.db.set_job_status(job_id,3)
-                    jobs_success += 1
-                else:
-                    self.db.set_job_status(job_id,5)
+            # Status 3: Job failed. Show how it failed
+            if job_status == 3:
+                if job_sub_status == 4:
+                    print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output Fail")
                     jobs_fail += 1
-            elif job_ce_status == "DONE-FAILED":
-                if self.finalize_job(job_id,job_name,ce_job_id):
-                    self.db.set_job_status(job_id,4)
+                if job_sub_status == 5:
+                    print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output OK")
+                    jobs_fail += 1
+                if job_sub_status == 6:
+                    print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output Fail")
+                    jobs_fail += 1
+                if job_sub_status == 7:
+                    print "- %s %s %s"%(job_name,ce_job_id,"CANCELLED")
+                    jobs_cancel += 1
+                continue
+
+            # Status is 1: Job is being processed
+            if job_status == 1:
+
+                # Get info about running job from CE
+                (job_ce_status,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
+                print "- %s %s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
+
+                # Register job delegation for proxy renewals
+                self.ph.delegations.append(job_delegation)
+
+                # Check current job status and update DB if it changed
+                if job_ce_status == "PENDING" or job_ce_status == "REGISTERED" or job_ce_status == "IDLE":
+                    jobs_idle += 1
+                elif job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING":
+                    jobs_active += 1
+                    if job_sub_status == 1:
+                        self.db.set_job_submit_status(job_sub_id,2)
+                        self.db.set_job_worker_node(job_sub_id,job_worker_node)
+                        self.db.set_job_wn_user(job_sub_id,job_local_user)
+                elif job_ce_status == "DONE-OK":
+                    if self.finalize_job(job_id,job_sub_id,ce_job_id):
+                        self.db.set_job_submit_status(job_sub_id,3)
+                        self.db.set_job_status(job_id,2)
+                        jobs_success += 1
+                    else:
+                        self.db.set_job_submit_status(job_sub_id,5)
+                        self.db.set_job_status(job_id,3)
+                        jobs_fail += 1
+                elif job_ce_status == "DONE-FAILED":
+                    if self.finalize_job(job_id,job_sub_id,ce_job_id):
+                        self.db.set_job_submit_status(job_sub_id,4)
+                    else:
+                        self.db.set_job_submit_status(job_sub_id,6)
+                    self.db.set_job_status(job_id,3)
+                    jobs_fail += 1
+                elif job_ce_status == "CANCELLED":
+                    self.db.set_job_submit_status(job_sub_id,7)
+                    self.db.set_job_status(job_id,3)
+                    jobs_cancel += 1
+                elif job_ce_status == "UNDEF":
+                    self.db.set_job_submit_status(job_sub_id,8)
+                    jobs_undef += 1
                 else:
-                    self.db.set_job_status(job_id,6)
-                jobs_fail += 1
-            elif job_ce_status == "CANCELLED":
-                jobs_cancel += 1
-                self.db.set_job_status(job_id,7)
-            elif job_ce_status == "UNDEF":
-                self.db.set_job_status(job_id,8)
-                jobs_undef += 1
-            else:
-                print "  WARNING - unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
+                    print "  WARNING - unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
+
+                continue
            
         return (jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
     
@@ -211,17 +228,20 @@ class PadmeProdServer:
         # Go to job working directory
         os.chdir(job_dir)
     
+        # Create new job submission
+        job_sub_id = self.db.create_job_submit(job_id)
+
         # Submit job and log event to DB
         submit_cmd = "glite-ce-job-submit -a -r %s job.jdl"%prod_ce
         p = subprocess.Popen(submit_cmd.split(),stdin=None,stdout=subprocess.PIPE)
         ce_job_id = p.communicate()[0].rstrip()
-        self.db.set_job_submitted(job_id,ce_job_id,self.now_str())
+        self.db.set_job_submitted(job_id,ce_job_id)
     
         # Go back to main directory before returning
         os.chdir(main_dir)
     
         # Return submitted job identifier
-        return ce_job_id
+        return (job_sub_id,ce_job_id)
 
     #def get_job_ce_status(self,ce_job_id):
     #
@@ -256,7 +276,7 @@ class PadmeProdServer:
             if r: delegation = r.group(1)
         return (status,worker_node,local_user,delegation)
   
-    def finalize_job(self,job_id,job_name,ce_job_id):
+    def finalize_job(self,job_id,job_sub_id,ce_job_id):
     
         # Save main directory, i.e. top production manager directory
         main_dir = os.getcwd()
@@ -282,25 +302,36 @@ class PadmeProdServer:
         # Recover files from output directory and move them to job directory
         print "\tExtracting output files from dir %s"%out_dir
     
+        out_file_idx = "job.out"
+        err_file_idx = "job.err"
+        sh_file_idx  = "job.sh"
+
+        # Use resubmission index to rename job output files
+        job_sub_index = self.db.get_job_submit_index(job_sub_id)
+        if job_sub_index:
+            out_file_idx += "_%s"%job_sub_index
+            err_file_idx += "_%s"%job_sub_index
+            sh_file_idx  += "_%s"%job_sub_index
+
         output_ok = True
 
         out_file = "%s/job.out"%out_dir
         if os.path.exists(out_file):
-            os.rename(out_file,"./job.out")
+            os.rename(out_file,"./%s"%out_file_idx)
         else:
             output_ok = False
             print "WARNING File %s not found"%out_file
     
         err_file = "%s/job.err"%out_dir
         if os.path.exists(err_file):
-            os.rename(err_file,"./job.err")
+            os.rename(err_file,"./%s"%err_file_idx)
         else:
             output_ok = False
             print "WARNING File %s not found"%err_file
     
-        sh_file = "%s/job.sh"%out_dir
+        sh_file  = "%s/job.sh"%out_dir
         if os.path.exists(sh_file):
-            os.rename(sh_file,"./job.sh")
+            os.rename(sh_file,"./%s"%sh_file_idx)
         else:
             output_ok = False
             print "WARNING File %s not found"%sh_file
@@ -331,8 +362,8 @@ class PadmeProdServer:
         reco_avg_evtproc_cpu_time = ""
         reco_avg_evtproc_run_time = ""
 
-        if os.path.exists("job.out"):
-            jof = open("job.out","r")
+        if os.path.exists(out_file_idx):
+            jof = open(out_file_idx,"r")
             for line in jof:
 
                 r = re.match("^Job starting at (.*) \(UTC\)$",line)
@@ -383,6 +414,8 @@ class PadmeProdServer:
                     file_adler32 = r.group(4)
                     file_list.append((file_type,file_name,file_size,file_adler32))
 
+            jof.close()
+
         if time_start:
             print "\tJob started at %s (UTC)"%time_start
             self.db.set_job_time_start(job_id,time_start)
@@ -418,5 +451,3 @@ class PadmeProdServer:
     
         # Need to define some error handling procedure
         return True
-
-    def now_str(self): return time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
