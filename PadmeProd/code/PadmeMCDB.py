@@ -58,9 +58,9 @@ class PadmeMCDB:
         if n: return 1
         return 0
 
-    def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
+    def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
-        self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs)
+        self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
         prod_id = self.get_prod_id(name)
 
         self.check_db()
@@ -70,7 +70,7 @@ class PadmeMCDB:
 
     def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
 
-        self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs)
+        self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
         prod_id = self.get_prod_id(name)
 
         self.check_db()
@@ -78,19 +78,12 @@ class PadmeMCDB:
         c.execute("""INSERT INTO mc_prod (production_id,description,user_req,n_events_req,mc_version) VALUES (%s,%s,%s,%s,%s)""",(prod_id,description,user_req,n_events_req,mc_version))
         self.conn.commit()
 
-    def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
+    def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs))
+        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
         self.conn.commit()
-
-    #def set_prod_status(self,pid,status):
-    #
-    #    self.check_db()
-    #    c = self.conn.cursor()
-    #    c.execute("""UPDATE production SET status = %s WHERE id = %s""",(status,pid))
-    #    self.conn.commit()
 
     def close_prod(self,prod_id,n_jobs_ok,n_events):
 
@@ -108,7 +101,8 @@ class PadmeMCDB:
         self.conn.commit()
 
         total_events = 0
-        for n in res: total_events += int(n[0])
+        for r in res:
+            if r[0] != None: total_events += int(r[0])
         return total_events
 
     def get_prod_id(self,name):
@@ -156,6 +150,13 @@ class PadmeMCDB:
         c.execute("""INSERT INTO job (production_id,name,job_dir,configuration,input_list,random,status,time_create) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(prod_id,name,job_dir,configuration,input_list,random,status,self.__now__()))
         self.conn.commit()
 
+    def close_job(self,job_id,status):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_id))
+        self.conn.commit()
+
     def get_job_id(self,prod_id,name):
 
         self.check_db()
@@ -185,7 +186,18 @@ class PadmeMCDB:
         c.execute("""SELECT name,job_dir,status FROM job WHERE id=%s""",(job_id,))
         res = c.fetchone()
         self.conn.commit()
+        if (res == None): return (None,None,None)
         return res
+
+    def get_job_submissions(self,job_id):
+    
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""SELECT COUNT(*) FROM job_submit WHERE job_id=%s""",(job_id,))
+        res = c.fetchone()
+        self.conn.commit()
+        (n_subs,) = res
+        return n_subs
 
     def create_job_submit(self,job_id):
 
@@ -211,6 +223,13 @@ class PadmeMCDB:
 
         # Return job submission id
         return job_sub_id
+
+    def close_job_submit(self,job_sub_id,status):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_sub_id))
+        self.conn.commit()
 
     def get_job_submit_id(self,job_id):
     
@@ -323,6 +342,12 @@ class PadmeMCDB:
         self.check_db()
         c = self.conn.cursor()
         c.execute("""UPDATE job_submit SET wn_user = %s WHERE id = %s""",(wn_user,job_sub_id))
+        self.conn.commit()
+
+    def set_job_wn_dir(self,job_sub_id,wn_dir):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET wn_dir = %s WHERE id = %s""",(wn_dir,job_sub_id))
         self.conn.commit()
 
     def set_job_n_files(self,job_id,n_files):

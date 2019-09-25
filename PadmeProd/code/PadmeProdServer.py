@@ -5,6 +5,7 @@ import sys
 import time
 import subprocess
 import re
+import shlex
 
 from PadmeMCDB import PadmeMCDB
 from Logger import Logger
@@ -12,13 +13,24 @@ from ProxyHandler import ProxyHandler
 
 class PadmeProdServer:
 
-    def __init__(self,prod_name):
+    def __init__(self,prod_name,debug):
 
         self.db = PadmeMCDB()
+
         self.ph = ProxyHandler()
+        self.ph.debug = debug
+
+        self.debug = debug
         self.prod_name = prod_name
         self.prod_check_delay = 60
+        self.job_submissions_max = 3
+
         self.start_production()
+
+    def run_command(self,command):
+        if self.debug: print "> %s"%command
+        p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        return iter(p.stdout.readline,b'')
 
     def start_production(self):
 
@@ -83,7 +95,7 @@ class PadmeProdServer:
 
             # If all jobs are in a final state, production is over
             if jobs_submit+jobs_idle+jobs_active+jobs_undef == 0:
-                print "*** No unfinished jobs left: exiting ***"
+                print "--- No unfinished jobs left: exiting ---"
                 break
 
             # Handle UNDEF condition in a relaxed way as it might be a temporary glitch of the CE
@@ -102,6 +114,7 @@ class PadmeProdServer:
     
         # Production is over: get total events, tag production as done and say bye bye
         n_events = self.db.get_prod_total_events(prod_id)
+        print "- Jobs submitted: %d - Jobs successful: %d - Total events: %d"%(prod_njobs,jobs_success,n_events)
         self.db.close_prod(prod_id,jobs_success,n_events)
     
         print "=== Ending Production %s ==="%self.prod_name
@@ -182,6 +195,7 @@ class PadmeProdServer:
                 self.ph.delegations.append(job_delegation)
 
                 # Check current job status and update DB if it changed
+                job_resubmit = False
                 if job_ce_status == "PENDING" or job_ce_status == "REGISTERED" or job_ce_status == "IDLE":
                     jobs_idle += 1
                 elif job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING":
@@ -192,32 +206,46 @@ class PadmeProdServer:
                         self.db.set_job_wn_user(job_sub_id,job_local_user)
                 elif job_ce_status == "DONE-OK":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
-                        self.db.set_job_submit_status(job_sub_id,3)
-                        self.db.set_job_status(job_id,2)
+                        self.db.close_job_submit(job_sub_id,3)
+                        self.db.close_job(job_id,2)
                         jobs_success += 1
                     else:
-                        self.db.set_job_submit_status(job_sub_id,5)
-                        self.db.set_job_status(job_id,3)
-                        jobs_fail += 1
+                        self.db.close_job_submit(job_sub_id,5)
+                        job_resubmit = True
                 elif job_ce_status == "DONE-FAILED":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
-                        self.db.set_job_submit_status(job_sub_id,4)
+                        self.db.close_job_submit(job_sub_id,4)
                     else:
-                        self.db.set_job_submit_status(job_sub_id,6)
-                    self.db.set_job_status(job_id,3)
-                    jobs_fail += 1
+                        self.db.close_job_submit(job_sub_id,6)
+                    job_resubmit = True
                 elif job_ce_status == "CANCELLED":
-                    self.db.set_job_submit_status(job_sub_id,7)
-                    self.db.set_job_status(job_id,3)
+                    self.db.close_job_submit(job_sub_id,7)
+                    # Change to make CANCEL resubmittable for debugging purposes
+                    self.db.close_job(job_id,3)
                     jobs_cancel += 1
+                    #job_resubmit = True
                 elif job_ce_status == "UNDEF":
                     self.db.set_job_submit_status(job_sub_id,8)
                     jobs_undef += 1
                 else:
                     print "  WARNING - unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
 
-                continue
-           
+                if job_resubmit:
+
+                    # If we get here, the job was either DONE-FAILED or DONE-OK but with problems in the
+                    # output files: see if we can resubmit it
+
+                    if self.db.get_job_submissions(job_id) >= self.job_submissions_max:
+                        # Job was resubmitted too many times, tag it as failed
+                        print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,self.job_submissions_max)
+                        self.db.close_job(job_id,3)
+                        jobs_fail += 1
+                    else:
+                        # Resubmit the job
+                        (job_sub_id,ce_job_id) = self.submit_job(job_id,job_dir,prod_ce)
+                        print "- %s %s RESUBMITTED"%(job_name,ce_job_id)
+                        jobs_submit += 1
+
         return (jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
     
     def submit_job(self,job_id,job_dir,prod_ce):
@@ -233,39 +261,33 @@ class PadmeProdServer:
 
         # Submit job and log event to DB
         submit_cmd = "glite-ce-job-submit -a -r %s job.jdl"%prod_ce
-        p = subprocess.Popen(submit_cmd.split(),stdin=None,stdout=subprocess.PIPE)
-        ce_job_id = p.communicate()[0].rstrip()
-        self.db.set_job_submitted(job_id,ce_job_id)
+        #p = subprocess.Popen(submit_cmd.split(),stdin=None,stdout=subprocess.PIPE)
+        #ce_job_id = p.communicate()[0].rstrip()
+        for l in self.run_command(submit_cmd):
+            if self.debug: print l.rstrip()
+            if l: ce_job_id = l.rstrip()
+        self.db.set_job_submitted(job_sub_id,ce_job_id)
     
         # Go back to main directory before returning
         os.chdir(main_dir)
     
         # Return submitted job identifier
         return (job_sub_id,ce_job_id)
-
-    #def get_job_ce_status(self,ce_job_id):
-    #
-    #    # Retrieve status of job
-    #    job_status_cmd = "glite-ce-job-status %s"%ce_job_id
-    #    p = subprocess.Popen(job_status_cmd.split(),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    #    status_info = p.communicate()[0].split("\n")
-    #    status = "UNDEF"
-    #    for l in status_info:
-    #        r = re.match("^\s*Status\s*= \[(.+)\].*$",l)
-    #        if r: status = r.group(1)
-    #    return status
   
     def get_job_ce_status(self,ce_job_id):
     
         # Retrieve status of job
         job_status_cmd = "glite-ce-job-status --level 2 %s"%ce_job_id
+        if self.debug: print "> %s"%job_status_cmd
         p = subprocess.Popen(job_status_cmd.split(),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         status_info = p.communicate()[0].split("\n")
         status = "UNDEF"
         worker_node = "UNKNOWN"
         local_user = "UNKNOWN"
         delegation = ""
+        #for l in self.run_command(job_status_cmd):
         for l in status_info:
+            if self.debug >= 2: print l
             r = re.match("^\s*Current Status\s+=\s+\[(.+)\].*$",l)
             if r: status = r.group(1)
             r = re.match("^\s*Worker Node\s+=\s+\[(.+)\].*$",l)
@@ -290,7 +312,9 @@ class PadmeProdServer:
         getout_cmd = "glite-ce-job-output -N %s"%ce_job_id
         print "\t> %s"%getout_cmd
         rc = subprocess.call(getout_cmd.split())
-    
+        #for l in self.run_command(getout_cmd):
+        #    if self.debug: print l
+
         # Get name of dir where output files are stored from the ce_job_id
         out_dir = ce_job_id[8:].replace(":","_").replace("/","_")
 
@@ -299,40 +323,26 @@ class PadmeProdServer:
             print "WARNING Job output dir %s not found"%out_dir
             return False
 
-        # Recover files from output directory and move them to job directory
-        print "\tExtracting output files from dir %s"%out_dir
-    
-        out_file_idx = "job.out"
-        err_file_idx = "job.err"
-        sh_file_idx  = "job.sh"
+        # Rename output dir with submission name
+        sub_dir = "submit_%s"%self.db.get_job_submit_index(job_sub_id)
+        os.rename(out_dir,sub_dir)
 
-        # Use resubmission index to rename job output files
-        job_sub_index = self.db.get_job_submit_index(job_sub_id)
-        if job_sub_index:
-            out_file_idx += "_%s"%job_sub_index
-            err_file_idx += "_%s"%job_sub_index
-            sh_file_idx  += "_%s"%job_sub_index
+        # Check if all expected output files are there
 
         output_ok = True
 
-        out_file = "%s/job.out"%out_dir
-        if os.path.exists(out_file):
-            os.rename(out_file,"./%s"%out_file_idx)
-        else:
+        out_file = "%s/job.out"%sub_dir
+        if not os.path.exists(out_file):
             output_ok = False
             print "WARNING File %s not found"%out_file
     
-        err_file = "%s/job.err"%out_dir
-        if os.path.exists(err_file):
-            os.rename(err_file,"./%s"%err_file_idx)
-        else:
+        err_file = "%s/job.err"%sub_dir
+        if not os.path.exists(err_file):
             output_ok = False
             print "WARNING File %s not found"%err_file
     
-        sh_file  = "%s/job.sh"%out_dir
-        if os.path.exists(sh_file):
-            os.rename(sh_file,"./%s"%sh_file_idx)
-        else:
+        sh_file  = "%s/job.sh"%sub_dir
+        if not os.path.exists(sh_file):
             output_ok = False
             print "WARNING File %s not found"%sh_file
 
@@ -346,14 +356,22 @@ class PadmeProdServer:
         purge_job_cmd = "glite-ce-job-purge -N %s"%ce_job_id
         print "\t> %s"%purge_job_cmd
         rc = subprocess.call(purge_job_cmd.split())
+        #for l in self.run_command(purge_job_cmd):
+        #    if self.debug: print l
 
         # Scan log file looking for some information
+
+        worker_node = ""
+        wn_user = ""
+        wn_dir = ""
+
         time_start = ""
         time_end = ""
         prog_start = ""
         prog_end = ""
-        worker_node = ""
+
         file_list = []
+
         reco_processed_events = "0"
         reco_tot_cpu_time = ""
         reco_tot_run_time = ""
@@ -362,59 +380,73 @@ class PadmeProdServer:
         reco_avg_evtproc_cpu_time = ""
         reco_avg_evtproc_run_time = ""
 
-        if os.path.exists(out_file_idx):
-            jof = open(out_file_idx,"r")
-            for line in jof:
+        jof = open(out_file,"r")
+        for line in jof:
 
-                r = re.match("^Job starting at (.*) \(UTC\)$",line)
-                if r: time_start = r.group(1)
+            r = re.match("^Job running on node (\S*) as user (\S*) in dir (\S*)\s*$",line)
+            if r:
+                worker_node = r.group(1)
+                wn_user = r.group(2)
+                wn_dir = r.group(3)
 
-                r = re.match("^Job ending at (.*) \(UTC\)$",line)
-                if r: time_end = r.group(1)
+            r = re.match("^Job starting at (.*) \(UTC\)$",line)
+            if r: time_start = r.group(1)
 
-                r = re.match("^Program starting at (.*) \(UTC\)$",line)
-                if r: prog_start = r.group(1)
+            r = re.match("^Job ending at (.*) \(UTC\)$",line)
+            if r: time_end = r.group(1)
 
-                r = re.match("^Program ending at (.*) \(UTC\)$",line)
-                if r: prog_end = r.group(1)
+            r = re.match("^Program starting at (.*) \(UTC\)$",line)
+            if r: prog_start = r.group(1)
 
-                r = re.match("^Job running on node (.*) as user",line)
-                if r: worker_node = r.group(1)
+            r = re.match("^Program ending at (.*) \(UTC\)$",line)
+            if r: prog_end = r.group(1)
 
-                # Extract PadmeReco final summary information
-                if re.match("^RecoInfo - .*$",line):
+            # Extract PadmeReco final summary information
+            if re.match("^RecoInfo - .*$",line):
 
-                    r = re.match("^.*Processed Events\s+(\d+)\s*$",line)
-                    if r: reco_processed_events = r.group(1)
+                r = re.match("^.*Processed Events\s+(\d+)\s*$",line)
+                if r: reco_processed_events = r.group(1)
 
-                    r = re.match("^.*Total CPU time\s+(\S+)\s+s*$",line)
-                    if r: reco_tot_cpu_time = r.group(1)
+                r = re.match("^.*Total CPU time\s+(\S+)\s+s*$",line)
+                if r: reco_tot_cpu_time = r.group(1)
 
-                    r = re.match("^.*Total Run time\s+(\S+)\s+s*$",line)
-                    if r: reco_tot_run_time = r.group(1)
+                r = re.match("^.*Total Run time\s+(\S+)\s+s*$",line)
+                if r: reco_tot_run_time = r.group(1)
 
-                    r = re.match("^.*Total Event Processing CPU time\s+(\S+)\s+s*$",line)
-                    if r: reco_tot_evtproc_cpu_time = r.group(1)
+                r = re.match("^.*Total Event Processing CPU time\s+(\S+)\s+s*$",line)
+                if r: reco_tot_evtproc_cpu_time = r.group(1)
 
-                    r = re.match("^.*Total Event Processing Run time\s+(\S+)\s+s*$",line)
-                    if r: reco_tot_evtproc_run_time = r.group(1)
+                r = re.match("^.*Total Event Processing Run time\s+(\S+)\s+s*$",line)
+                if r: reco_tot_evtproc_run_time = r.group(1)
 
-                    r = re.match("^.*Average Event Processing CPU time\s+(\S+)\s+s*$",line)
-                    if r: reco_avg_evtproc_cpu_time = r.group(1)
+                r = re.match("^.*Average Event Processing CPU time\s+(\S+)\s+s*$",line)
+                if r: reco_avg_evtproc_cpu_time = r.group(1)
 
-                    r = re.match("^.*Average Event Processing Run time\s+(\S+)\s+s*$",line)
-                    if r: reco_avg_evtproc_run_time = r.group(1)
+                r = re.match("^.*Average Event Processing Run time\s+(\S+)\s+s*$",line)
+                if r: reco_avg_evtproc_run_time = r.group(1)
 
-                # Extract info about produced output file(s)
-                r = re.match("^(.*) file (.*) with size (.*) and adler32 (.*) copied.*$",line)
-                if r:
-                    file_type = r.group(1)
-                    file_name = r.group(2)
-                    file_size = int(r.group(3))
-                    file_adler32 = r.group(4)
-                    file_list.append((file_type,file_name,file_size,file_adler32))
+            # Extract info about produced output file(s)
+            r = re.match("^(.*) file (.*) with size (.*) and adler32 (.*) copied.*$",line)
+            if r:
+                file_type = r.group(1)
+                file_name = r.group(2)
+                file_size = int(r.group(3))
+                file_adler32 = r.group(4)
+                file_list.append((file_type,file_name,file_size,file_adler32))
 
-            jof.close()
+        jof.close()
+
+        if worker_node:
+            print "\tJob run on worker node %s"%worker_node
+            self.db.set_job_worker_node(job_id,worker_node)
+
+        if wn_user:
+            print "\tJob run as user %s"%wn_user
+            self.db.set_job_wn_user(job_id,wn_user)
+
+        if wn_dir:
+            print "\tJob run in directory %s"%wn_dir
+            self.db.set_job_wn_dir(job_id,wn_dir)
 
         if time_start:
             print "\tJob started at %s (UTC)"%time_start
@@ -431,10 +463,6 @@ class PadmeProdServer:
         if prog_end:
             print "\tProgram ended at %s (UTC)"%prog_end
             self.db.set_run_time_end(job_id,prog_end)
-
-        if worker_node:
-            print "\tJob run on worker node %s"%worker_node
-            self.db.set_job_worker_node(job_id,worker_node)
 
         if reco_processed_events:
             print "\tJob processed %s events"%reco_processed_events
