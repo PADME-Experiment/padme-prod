@@ -9,6 +9,13 @@ class PadmeMCDB:
 
     def __init__(self):
 
+        # Get DB connection parameters from environment variables
+        self.DB_HOST   = os.getenv('PADME_MCDB_HOST'  ,'percona.lnf.infn.it')
+        self.DB_PORT   = int(os.getenv('PADME_MCDB_PORT'  ,'3306'))
+        self.DB_USER   = os.getenv('PADME_MCDB_USER'  ,'padmeMCDB')
+        self.DB_PASSWD = os.getenv('PADME_MCDB_PASSWD','unknown')
+        self.DB_NAME   = os.getenv('PADME_MCDB_NAME'  ,'PadmeMCDB')
+
         self.conn = None
 
     def __del__(self):
@@ -19,17 +26,14 @@ class PadmeMCDB:
 
         self.close_db()
 
-        # Get DB connection parameters from environment variables
-        DB_HOST   = os.getenv('PADME_MCDB_HOST'  ,'percona.lnf.infn.it')
-        DB_PORT   = os.getenv('PADME_MCDB_PORT'  ,'3306')
-        DB_USER   = os.getenv('PADME_MCDB_USER'  ,'padmeMCDB')
-        DB_PASSWD = os.getenv('PADME_MCDB_PASSWD','unknown')
-        DB_NAME   = os.getenv('PADME_MCDB_NAME'  ,'PadmeMCDB')
-
         try:
-            self.conn = MySQLdb.connect(host=DB_HOST,port=int(DB_PORT),user=DB_USER,passwd=DB_PASSWD,db=DB_NAME)
+            self.conn = MySQLdb.connect(host   = self.DB_HOST,
+                                        port   = self.DB_PORT,
+                                        user   = self.DB_USER,
+                                        passwd = self.DB_PASSWD,
+                                        db     = self.DB_NAME)
         except:
-            print "*** PadmeMCDB ERROR *** Unable to connect to DB"
+            print "*** PadmeMCDB ERROR *** Unable to connect to DB. Exception: %s"%sys.exc_info()[0]
             sys.exit(2)
 
     def close_db(self):
@@ -60,30 +64,34 @@ class PadmeMCDB:
 
     def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
-        self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
-        prod_id = self.get_prod_id(name)
+        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""INSERT INTO reco_prod (production_id,description,run,reco_version) VALUES (%s,%s,%s,%s)""",(prod_id,description,run,reco_version))
         self.conn.commit()
 
+        return prod_id
+
     def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
 
-        self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
-        prod_id = self.get_prod_id(name)
+        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""INSERT INTO mc_prod (production_id,description,user_req,n_events_req,mc_version) VALUES (%s,%s,%s,%s,%s)""",(prod_id,description,user_req,n_events_req,mc_version))
         self.conn.commit()
 
+        return prod_id
+
     def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
+        prod_id = c.lastrowid
         self.conn.commit()
+        return prod_id
 
     def close_prod(self,prod_id,n_jobs_ok,n_events):
 

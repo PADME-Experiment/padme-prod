@@ -235,8 +235,7 @@ def main(argv):
     print "- Creating new production in DB"
     # This will improve when we have a web interface to handle production requests
     PROD_DESCRIPTION = "TEST"
-    DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,PROD_PROXY_FILE,len(job_file_lists))
-    prodId = DB.get_prod_id(PROD_NAME)
+    prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,PROD_PROXY_FILE,len(job_file_lists))
 
     # Create production directory in the storage SRM
     print "- Creating dir",PROD_STORAGE_DIR,"in",PROD_SRM
@@ -286,6 +285,9 @@ def main(argv):
 
         # Create job entry in DB and register job
         DB.create_job(prodId,jobName,jobDir,jobCfg,jobList)
+
+        # From now on we do not need the DB anymore: close connection
+        DB.close_db()
 
     # Prepare daemon context
 

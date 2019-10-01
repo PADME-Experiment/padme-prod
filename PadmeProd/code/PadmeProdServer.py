@@ -6,6 +6,7 @@ import time
 import subprocess
 import re
 import shlex
+import random
 
 from PadmeMCDB import PadmeMCDB
 from Logger import Logger
@@ -21,8 +22,13 @@ class PadmeProdServer:
         self.ph.debug = debug
 
         self.debug = debug
+
         self.prod_name = prod_name
-        self.prod_check_delay = 60
+
+        # Delay between two checks. Interval is flat between 3m and 5m
+        self.prod_check_delay = 180
+        self.prod_check_delay_spread = 120
+
         self.job_submissions_max = 3
 
         self.start_production()
@@ -108,15 +114,21 @@ class PadmeProdServer:
                 else:
                     print "*** More than 10 consecutive iterations with jobs in UNDEF state: exiting ***"
                     break
+
+            # Release DB connection while idle
+            self.db.close_db()
     
-            # Sleep for a while
-            time.sleep(self.prod_check_delay)
+            # Sleep for a while (use random to avoid coherent checks when multiple runs are active)
+            time.sleep(self.prod_check_delay+random.randint(0,self.prod_check_delay_spread+1))
     
         # Production is over: get total events, tag production as done and say bye bye
         n_events = self.db.get_prod_total_events(prod_id)
         print "- Jobs submitted: %d - Jobs successful: %d - Total events: %d"%(prod_njobs,jobs_success,n_events)
         self.db.close_prod(prod_id,jobs_success,n_events)
     
+        # Release DB connection before exiting
+        self.db.close_db()
+
         print "=== Ending Production %s ==="%self.prod_name
         sys.exit(0)
     
