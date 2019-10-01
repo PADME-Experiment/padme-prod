@@ -3,10 +3,18 @@
 import MySQLdb
 import os
 import sys
+import time
 
 class PadmeMCDB:
 
     def __init__(self):
+
+        # Get DB connection parameters from environment variables
+        self.DB_HOST   = os.getenv('PADME_MCDB_HOST'  ,'percona.lnf.infn.it')
+        self.DB_PORT   = int(os.getenv('PADME_MCDB_PORT'  ,'3306'))
+        self.DB_USER   = os.getenv('PADME_MCDB_USER'  ,'padmeMCDB')
+        self.DB_PASSWD = os.getenv('PADME_MCDB_PASSWD','unknown')
+        self.DB_NAME   = os.getenv('PADME_MCDB_NAME'  ,'PadmeMCDB')
 
         self.conn = None
 
@@ -18,17 +26,14 @@ class PadmeMCDB:
 
         self.close_db()
 
-        # Get DB connection parameters from environment variables
-        DB_HOST   = os.getenv('PADME_MCDB_HOST'  ,'percona.lnf.infn.it')
-        DB_PORT   = os.getenv('PADME_MCDB_PORT'  ,'3306')
-        DB_USER   = os.getenv('PADME_MCDB_USER'  ,'padmeMCDB')
-        DB_PASSWD = os.getenv('PADME_MCDB_PASSWD','unknown')
-        DB_NAME   = os.getenv('PADME_MCDB_NAME'  ,'PadmeMCDB')
-
         try:
-            self.conn = MySQLdb.connect(host=DB_HOST,port=int(DB_PORT),user=DB_USER,passwd=DB_PASSWD,db=DB_NAME)
+            self.conn = MySQLdb.connect(host   = self.DB_HOST,
+                                        port   = self.DB_PORT,
+                                        user   = self.DB_USER,
+                                        passwd = self.DB_PASSWD,
+                                        db     = self.DB_NAME)
         except:
-            print "*** PadmeMCDB ERROR *** Unable to connect to DB"
+            print "*** PadmeMCDB ERROR *** Unable to connect to DB. Exception: %s"%sys.exc_info()[0]
             sys.exit(2)
 
     def close_db(self):
@@ -57,46 +62,42 @@ class PadmeMCDB:
         if n: return 1
         return 0
 
-    def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs):
+    def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
-        self.create_prod(name,prod_ce,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs)
-        prod_id = self.get_prod_id(name)
+        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""INSERT INTO reco_prod (production_id,description,run,reco_version) VALUES (%s,%s,%s,%s)""",(prod_id,description,run,reco_version))
         self.conn.commit()
 
-    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs):
+        return prod_id
 
-        self.create_prod(name,prod_ce,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs)
-        prod_id = self.get_prod_id(name)
+    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
+
+        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""INSERT INTO mc_prod (production_id,description,user_req,n_events_req,mc_version) VALUES (%s,%s,%s,%s,%s)""",(prod_id,description,user_req,n_events_req,mc_version))
         self.conn.commit()
 
-    def create_prod(self,name,prod_ce,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs):
+        return prod_id
+
+    def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(name,prod_ce,prod_dir,storage_dir,srm_uri,proxy_file,time_start,n_jobs))
+        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
+        prod_id = c.lastrowid
         self.conn.commit()
+        return prod_id
 
-
-    #def set_prod_status(self,pid,status):
-    #
-    #    self.check_db()
-    #    c = self.conn.cursor()
-    #    c.execute("""UPDATE production SET status = %s WHERE id = %s""",(status,pid))
-    #    self.conn.commit()
-
-    def close_prod(self,pid,time_end,n_jobs_ok,n_events):
+    def close_prod(self,prod_id,n_jobs_ok,n_events):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE production SET time_end = %s, n_jobs_ok = %s, n_events = %s WHERE id = %s""",(time_end,n_jobs_ok,n_events,pid))
+        c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_events,prod_id))
         self.conn.commit()
 
     def get_prod_total_events(self,prod_id):
@@ -108,7 +109,8 @@ class PadmeMCDB:
         self.conn.commit()
 
         total_events = 0
-        for n in res: total_events += int(n[0])
+        for r in res:
+            if r[0] != None: total_events += int(r[0])
         return total_events
 
     def get_prod_id(self,name):
@@ -153,7 +155,14 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO job (production_id,name,job_dir,configuration,input_list,random,status) VALUES (%s,%s,%s,%s,%s,%s,%s)""",(prod_id,name,job_dir,configuration,input_list,random,status))
+        c.execute("""INSERT INTO job (production_id,name,job_dir,configuration,input_list,random,status,time_create) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(prod_id,name,job_dir,configuration,input_list,random,status,self.__now__()))
+        self.conn.commit()
+
+    def close_job(self,job_id,status):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_id))
         self.conn.commit()
 
     def get_job_id(self,prod_id,name):
@@ -167,29 +176,6 @@ class PadmeMCDB:
         (id,) = res
         return id
 
-    def get_job_info(self,job_id):
-
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""SELECT name,status,job_dir,ce_job_id FROM job WHERE id=%s""",(job_id,))
-        res = c.fetchone()
-        self.conn.commit()
-        return res
-
-    def set_job_status(self,job_id,status):
-
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""UPDATE job SET status = %s WHERE id = %s""",(status,job_id))
-        self.conn.commit()
-
-    def set_job_submitted(self,job_id,ce_job_id,time_submit):
-
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""UPDATE job SET status = 1, ce_job_id = %s, time_submit = %s WHERE id = %s""",(ce_job_id,time_submit,job_id))
-        self.conn.commit()
-
     def get_job_dir(self,job_id):
 
         self.check_db()
@@ -201,62 +187,188 @@ class PadmeMCDB:
         (job_dir,) = res
         return job_dir
 
-    def set_job_time_start(self,job_id,time_start):
+    def get_job_info(self,job_id):
+    
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""SELECT name,job_dir,status FROM job WHERE id=%s""",(job_id,))
+        res = c.fetchone()
+        self.conn.commit()
+        if (res == None): return (None,None,None)
+        return res
+
+    def get_job_submissions(self,job_id):
+    
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""SELECT COUNT(*) FROM job_submit WHERE job_id=%s""",(job_id,))
+        res = c.fetchone()
+        self.conn.commit()
+        (n_subs,) = res
+        return n_subs
+
+    def create_job_submit(self,job_id):
+
+        # Job submissions are created in idle status
+        status = 0
+
+        # Assume that this is he first submission
+        index = 0
+
+        # Check if this is a resubmission
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""SELECT MAX(submit_index) FROM job_submit WHERE job_id = %s""",(job_id,))
+        res = c.fetchone()
+        if res != None and res[0] != None:
+            (idx_max,) = res
+            index = idx_max+1
+
+        # Create new job submission
+        c.execute("""INSERT INTO job_submit (job_id,submit_index,status,time_submit) VALUES (%s,%s,%s,%s)""",(job_id,index,status,self.__now__()))
+        job_sub_id = c.lastrowid
+        self.conn.commit()
+
+        # Return job submission id
+        return job_sub_id
+
+    def close_job_submit(self,job_sub_id,status):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET time_job_start = %s WHERE id = %s""",(time_start,job_id))
+        c.execute("""UPDATE job_submit SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_sub_id))
         self.conn.commit()
 
-    def set_job_time_end(self,job_id,time_end):
-
+    def get_job_submit_id(self,job_id):
+    
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET time_job_end = %s WHERE id = %s""",(time_end,job_id))
+
+        # Find job submission with highest index
+
+        max_index = 0
+        c.execute("""SELECT MAX(submit_index) FROM job_submit WHERE job_id = %s""",(job_id,))
+        res = c.fetchone()
+        if res != None and res[0] != None: (max_index,) = res
+
+        c.execute("""SELECT id FROM job_submit WHERE job_id = %s AND submit_index = %s""",(job_id,max_index))
+        res = c.fetchone()
         self.conn.commit()
+        (job_sub_id,) = res
 
-    def set_run_time_start(self,job_id,time_start):
+        return job_sub_id
 
+    def get_job_submit_info(self,job_sub_id):
+    
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET time_run_start = %s WHERE id = %s""",(time_start,job_id))
+        c.execute("""SELECT submit_index,status,ce_job_id,worker_node,wn_user FROM job_submit WHERE id=%s""",(job_sub_id,))
+        res = c.fetchone()
         self.conn.commit()
+        return res
 
-    def set_run_time_end(self,job_id,time_end):
-
+    def get_job_submit_index(self,job_sub_id):
+    
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET time_run_end = %s WHERE id = %s""",(time_end,job_id))
+        c.execute("""SELECT submit_index FROM job_submit WHERE id=%s""",(job_sub_id,))
+        res = c.fetchone()
         self.conn.commit()
-
-    def set_job_worker_node(self,job_id,worker_node):
-
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""UPDATE job SET worker_node = %s WHERE id = %s""",(worker_node,job_id))
-        self.conn.commit()
-
-    def set_job_n_files(self,job_id,n_files):
-
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""UPDATE job SET n_files = %s WHERE id = %s""",(n_files,job_id))
-        self.conn.commit()
-
-    def set_job_n_events(self,job_id,n_events):
-
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""UPDATE job SET n_events = %s WHERE id = %s""",(n_events,job_id))
-        self.conn.commit()
+        (index,) = res
+        return index
 
     def create_job_file(self,job_id,file_name,file_type,seq_n,n_events,size,adler32):
 
         self.check_db()
         c = self.conn.cursor()
         try:
-            c.execute("""INSERT INTO file (job_id,name,type,seq_n,n_events,size,adler32) VALUES (%s,%s,%s,%s,%s,%s,%s)""",(job_id,file_name,file_type,seq_n,n_events,size,adler32))
+            c.execute("""INSERT INTO file (job_id,name,type,seq_index,n_events,size,adler32) VALUES (%s,%s,%s,%s,%s,%s,%s)""",(job_id,file_name,file_type,seq_n,n_events,size,adler32))
         except:
             print "MySQL command",c._last_executed
             sys.exit(2)
         self.conn.commit()
+
+    def set_job_submitted(self,job_sub_id,ce_job_id):
+  
+        # Job status changes to 1 after submission
+        status = 1
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET status = %s, ce_job_id = %s, time_submit = %s WHERE id = %s""",(status,ce_job_id,self.__now__(),job_sub_id))
+        self.conn.commit()
+
+    def set_job_status(self,job_id,status):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET status = %s WHERE id = %s""",(status,job_id))
+        self.conn.commit()
+
+    def set_job_submit_status(self,job_sub_id,status):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET status = %s WHERE id = %s""",(status,job_sub_id))
+        self.conn.commit()
+
+    def set_job_time_complete(self,job_id,time_complete):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET time_complete = %s WHERE id = %s""",(time_complete,job_id))
+        self.conn.commit()
+
+    def set_job_time_start(self,job_sub_id,time_start):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET time_job_start = %s WHERE id = %s""",(time_start,job_sub_id))
+        self.conn.commit()
+
+    def set_job_time_end(self,job_sub_id,time_end):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET time_job_end = %s WHERE id = %s""",(time_end,job_sub_id))
+        self.conn.commit()
+
+    def set_run_time_start(self,job_sub_id,time_start):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET time_run_start = %s WHERE id = %s""",(time_start,job_sub_id))
+        self.conn.commit()
+
+    def set_run_time_end(self,job_sub_id,time_end):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET time_run_end = %s WHERE id = %s""",(time_end,job_sub_id))
+        self.conn.commit()
+
+    def set_job_worker_node(self,job_sub_id,worker_node):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET worker_node = %s WHERE id = %s""",(worker_node,job_sub_id))
+        self.conn.commit()
+
+    def set_job_wn_user(self,job_sub_id,wn_user):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET wn_user = %s WHERE id = %s""",(wn_user,job_sub_id))
+        self.conn.commit()
+
+    def set_job_wn_dir(self,job_sub_id,wn_dir):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job_submit SET wn_dir = %s WHERE id = %s""",(wn_dir,job_sub_id))
+        self.conn.commit()
+
+    def set_job_n_files(self,job_id,n_files):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET n_files = %s WHERE id = %s""",(n_files,job_id))
+        self.conn.commit()
+
+    def set_job_n_events(self,job_id,n_events):
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE job SET n_events = %s WHERE id = %s""",(n_events,job_id))
+        self.conn.commit()
+
+    def __now__(self):
+        return time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())

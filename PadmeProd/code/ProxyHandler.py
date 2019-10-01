@@ -2,17 +2,23 @@
 
 import re
 import subprocess
+import shlex
 
 class ProxyHandler:
 
     def __init__(self):
+
+        # Set to 1 or more to enable printout of executed commands
+        self.debug = 0
+
         # These need to be set from calling program to enable delegation renewal
         self.cream_ce_endpoint = ""
         self.delegations = []
 
     def run_command(self,command):
-        print "> %s"%command
-        p = subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,shell=True)
+
+        if self.debug: print "> %s"%command
+        p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
         return iter(p.stdout.readline,b'')
 
     def renew_voms_proxy(self,long_proxy_file):
@@ -20,6 +26,7 @@ class ProxyHandler:
         # Check if current proxy is still valid and renew it if less than 2 hours before it expires
         renew = True
         for line in self.run_command("voms-proxy-info"):
+            if self.debug >= 2: print line.rstrip()
             r = re.match("^timeleft  \: (\d+)\:.*$",line)
             if r and int(r.group(1))>=2: renew = False
 
@@ -33,8 +40,8 @@ class ProxyHandler:
         # Create a 24h VOMS proxy from long lived proxy
         print "- Creating VOMS proxy using %s"%long_proxy_file
         cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(long_proxy_file,long_proxy_file)
-        print "> %s"%cmd
-        for line in self.run_command(cmd): print(line.rstrip())
+        for line in self.run_command(cmd):
+            if self.debug: print line.rstrip()
 
     def renew_delegations(self):
 
@@ -42,5 +49,5 @@ class ProxyHandler:
         if self.cream_ce_endpoint and self.delegations:
             print "- Renewing proxy delegations using new VOMS proxy"
             cmd = "glite-ce-proxy-renew --endpoint %s %s"%(self.cream_ce_endpoint,' '.join(self.delegations))
-            print "> %s"%cmd
-            for line in self.run_command(cmd): print(line.rstrip())
+            for line in self.run_command(cmd):
+                if self.debug: print line.rstrip()

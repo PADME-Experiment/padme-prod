@@ -6,6 +6,7 @@ import getopt
 import time
 import subprocess
 import shutil
+import shlex
 import re
 import daemon
 import daemon.pidfile
@@ -56,23 +57,23 @@ PROD_CE = PADME_CE_NODE["LNF"]
 PROD_SRM = PADME_SRM_URI["LNF"]
 PROD_RECO_VERSION = "develop"
 PROD_PROXY_FILE = ""
-PROD_YEAR = "2018"
-
-def now_str(): return time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
+PROD_YEAR = "2019"
+PROD_DEBUG = 0
 
 def print_help():
 
-    print "PadmeRecoProd -r <run_name> [-j <files_per_job>] [-v <padmereco_version>] [-n <prod_name>] [-s <submission_site>] [-d <storage_site>] [-h]"
-    print "  <run_name>\t\tname of the run to process"
-    print "  <padmereco_version>\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: develop"
-    print "  <prod_name>\t\tname for the production. Default: <run_name>_<padmereco_version>"
-    print "  <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
-    print "  <submission_site>\tsite where the jobs will be submitted. Allowed: %s. Default: LNF"%(",".join(PADME_CE_NODE.keys()))
-    print "  <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: LNF"%(",".join(PADME_SRM_URI.keys()))
+    print "PadmeRecoProd -r <run_name> [-j <files_per_job>] [-v <version>] [-n <prod_name>] [-s <submission_site>] [-d <storage_site>] [-V] [-h]"
+    print "  -r <run_name>\t\tname of the run to process"
+    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: develop"
+    print "  -n <prod_name>\tname for the production. Default: <run_name>_<padmereco_version>"
+    print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
+    print "  -s <submission_site>\tsite where the jobs will be submitted. Allowed: %s. Default: LNF"%(",".join(PADME_CE_NODE.keys()))
+    print "  -d <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: LNF"%(",".join(PADME_SRM_URI.keys()))
+    print "  -V\t\t\tenable debug mode"
 
 def run_command(command):
-    print "> %s"%command
-    p = subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,shell=True)
+    if PROD_DEBUG: print "> %s"%command
+    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
     return iter(p.stdout.readline,b'')
 
 def rawfile_sort_key(f):
@@ -88,6 +89,7 @@ def get_run_file_list(run):
     run_file_list = []
     run_dir = "%s/daq/%s/rawdata/%s"%(PADME_SRM_URI["LNF"],PROD_YEAR,run)
     for line in run_command("gfal-ls %s"%run_dir):
+        if PROD_DEBUG >= 2: print line.rstrip()
         if re.match("^gfal-ls error: ",line):
             print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
             sys.exit(2)
@@ -109,9 +111,10 @@ def main(argv):
     global PROD_RECO_VERSION
     global PROD_PROXY_FILE
     global PROD_YEAR
+    global PROD_DEBUG
 
     try:
-        opts,args = getopt.getopt(argv,"hr:n:j:s:v:",[])
+        opts,args = getopt.getopt(argv,"hVr:n:j:s:d:v:",[])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -120,6 +123,8 @@ def main(argv):
         if opt == '-h':
             print_help()
             sys.exit(0)
+        elif opt == '-V':
+            PROD_DEBUG += 1
         elif opt == '-r':
             PROD_RUN_NAME = arg
         elif opt == '-n':
@@ -135,7 +140,7 @@ def main(argv):
                 sys.exit(2)
         elif opt == '-d':
             if arg in PADME_SRM_URI.keys():
-                PROD_SRM = PADME_SRT_URI[arg]
+                PROD_SRM = PADME_SRM_URI[arg]
             else:
                 print "*** ERROR *** Invalid storage site %s. Valid: %s"%(arg,",".join(PADME_SRM_URI.keys()))
                 print_help()
@@ -175,12 +180,16 @@ def main(argv):
         PROD_DIR = "prod/%s"%PROD_NAME
 
     # Show info about required production
+    print
     print "Starting production",PROD_NAME,"for run",PROD_RUN_NAME,"using PadmeReco version",PROD_RECO_VERSION
     print "Submitting jobs of",PROD_FILES_PER_JOB,"files to CE",PROD_CE
     print "Main production directory:",PROD_DIR
     print "Production script:",PROD_SCRIPT
     print "Storage SRM:",PROD_SRM
     print "Storage directory:",PROD_STORAGE_DIR
+    if PROD_DEBUG:
+        "Debug level:",PROD_DEBUG
+        PH.debug = PROD_DEBUG
 
     # Check if production dir already exists
     if os.path.exists(PROD_DIR):
@@ -199,7 +208,7 @@ def main(argv):
     PROD_PROXY_FILE = "%s/job.proxy"%PROD_DIR
     print "- Creating long-lived proxy file",PROD_PROXY_FILE
     proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%PROD_PROXY_FILE
-    print ">",proxy_cmd
+    if PROD_DEBUG: print "> %s"%proxy_cmd
     if subprocess.call(proxy_cmd.split()):
         print "*** ERROR *** while generating long-lived proxy. Aborting"
         shutil.rmtree(PROD_DIR)
@@ -226,14 +235,12 @@ def main(argv):
     print "- Creating new production in DB"
     # This will improve when we have a web interface to handle production requests
     PROD_DESCRIPTION = "TEST"
-    DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_STORAGE_DIR,PROD_SRM,PROD_PROXY_FILE,now_str(),len(job_file_lists))
-    prodId = DB.get_prod_id(PROD_NAME)
-    #DB.set_prod_status(prodId,0)
+    prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,PROD_PROXY_FILE,len(job_file_lists))
 
     # Create production directory in the storage SRM
     print "- Creating dir",PROD_STORAGE_DIR,"in",PROD_SRM
     gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
-    print ">",gfal_mkdir_cmd
+    if PROD_DEBUG: print ">",gfal_mkdir_cmd
     rc = subprocess.call(gfal_mkdir_cmd.split())
 
     # Create job structures
@@ -279,6 +286,9 @@ def main(argv):
         # Create job entry in DB and register job
         DB.create_job(prodId,jobName,jobDir,jobCfg,jobList)
 
+        # From now on we do not need the DB anymore: close connection
+        DB.close_db()
+
     # Prepare daemon context
 
     # Assume that the current directory is the top level Production directory
@@ -303,7 +313,7 @@ def main(argv):
     context.umask = 0o002
     context.pidfile = daemon.pidfile.PIDLockFile(prod_lock)
     context.open()
-    PadmeProdServer(PROD_NAME)
+    PadmeProdServer(PROD_NAME,PROD_DEBUG)
     context.close()
     #PadmeProdServer(PROD_NAME)
 
