@@ -258,7 +258,7 @@ def main(argv):
             print "*** ERROR *** Long-lived proxy file %s was not found"%PROD_PROXY_FILE
             sys.exit(2)
         # Check if VOMS proxy exists and is valid. Renew it if not
-        PH.renew_voms_proxy(JOB_PROXY_FILE):
+        PH.renew_voms_proxy(JOB_PROXY_FILE)
     else:
         print "- Creating long-lived proxy file %s"%JOB_PROXY_FILE
         proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%JOB_PROXY_FILE

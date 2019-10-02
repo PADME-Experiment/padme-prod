@@ -208,8 +208,10 @@ def main(argv):
             for i in range(0,PROD_DEBUG): PROD_CMD += " -V"
 
         # Call PadmeRecoProd for this run
-        print PROD_CMD
-        #if subprocess.call(shlex.split(PROD_CMD)):
+        if PROD_DEBUG: print PROD_CMD
+        if subprocess.call(shlex.split(PROD_CMD)):
+            print "*** ERROR *** Production submission command returned an error"
+            sys.exit(2)
 
         # Change CE for next run
         PROD_CE_INDEX += 1

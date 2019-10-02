@@ -38,18 +38,25 @@ class PadmeProdServer:
         p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
         return iter(p.stdout.readline,b'')
 
+    def execute_command(self,command):
+        if self.debug: print "> %s"%command
+        p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        (out,err) = p.communicate()
+        return (p.returncode,out,err)
+
     def start_production(self):
 
         # This is the daemonized code to start and handle the full production
         # It is structured to only depend on DB information
 
-        # For the time being, enable terminal output (remove when demonizing)
+        # Uncomment to enable terminal output when not running in daemon mode
         #sys.stdout.interactive = True
         #sys.stderr.interactive = True
+
         # Verify that production exists in DB and retrieve production id
         if not self.db.is_prod_in_db(self.prod_name):
             print "*** ERROR *** Production '%s' not found in DB"%self.prod_name
-            sys.exit(2)
+            sys.exit(1)
         prod_id = self.db.get_prod_id(self.prod_name)
     
         # Get some info about this prod
@@ -58,12 +65,12 @@ class PadmeProdServer:
         # Check if production dir exists
         if not os.path.isdir(prod_dir):
             print "*** ERROR *** Production directory '%s' not found"%prod_dir
-            sys.exit(2)
+            sys.exit(1)
     
         # Check if proxy file exists
         if not os.path.isfile(proxy_file):
             print "*** ERROR *** Long-lived proxy file '%s' not found"%proxy_file
-            sys.exit(2)
+            sys.exit(1)
 
         # Redirect stdout and stderr to files with automatic time logging
         log_file_name = "%s/%s.log"%(prod_dir,self.prod_name)
@@ -75,7 +82,7 @@ class PadmeProdServer:
         job_id_list = self.db.get_job_list(prod_id)
         if len(job_id_list) != prod_njobs:
             print "*** ERROR *** Number of jobs in DB and in production are different: %s != %s"%(len(job_id_list),prod_njobs)
-            sys.exit(2)
+            sys.exit(1)
 
         # Extract CE endpoint and register it for proxy renewal
         r = re.match("^(.*)/.*$",prod_ce)
@@ -272,12 +279,51 @@ class PadmeProdServer:
         job_sub_id = self.db.create_job_submit(job_id)
 
         # Submit job and log event to DB
-        submit_cmd = "glite-ce-job-submit -a -r %s job.jdl"%prod_ce
+        submit_cmd = "glite-ce-job-submit --autm-delegation --resource %s job.jdl"%prod_ce
+
         #p = subprocess.Popen(submit_cmd.split(),stdin=None,stdout=subprocess.PIPE)
         #ce_job_id = p.communicate()[0].rstrip()
-        for l in self.run_command(submit_cmd):
-            if self.debug: print l.rstrip()
-            if l: ce_job_id = l.rstrip()
+
+        #for l in self.run_command(submit_cmd):
+        #    if self.debug: print l.rstrip()
+        #    if l: ce_job_id = l.rstrip()
+
+        # Handle job submission trapping errors and allowing for multiple retries
+        submits = 0
+        while True:
+            (rc,out,err) = self.execute_command(submit_cmd)
+            #if self.debug: print "Submission returned %d"%rc
+            if rc == 0:
+                ce_job_id = ""
+                for l in iter(out.splitlines()):
+                    if self.debug > 1: print l
+                    if re.match("^https://\S+:\d+/CREAM\S+$",l):
+                        ce_job_id = l
+                        break
+                if ce_job_id:
+                    if self.debug: print "CE job id is %s"%ce_job_id
+                    break
+                else:
+                    print "  WARNING Submit successful but no CE job id returned."
+            else:
+                print "  WARNING Submit returned error code %d"%rc
+
+            # Submission failed: show debug output
+            if self.debug:
+                print "- STDOUT -"
+                print out
+                print "- STDERR -"
+                print err
+
+            # Abort if too many attemps failed
+            submits += 1
+            if submits >= self.job_submissions_max:
+                print "*** ERROR *** Job submission failed %d times. Aborting"%self.job_submissions_max
+                sys.exit(1)
+
+            # Wait a bit before retrying
+            time.sleep(10)
+
         self.db.set_job_submitted(job_sub_id,ce_job_id)
     
         # Go back to main directory before returning
