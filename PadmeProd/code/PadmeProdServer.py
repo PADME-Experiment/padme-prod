@@ -30,6 +30,7 @@ class PadmeProdServer:
         self.prod_check_delay_spread = 120
 
         self.job_submissions_max = 3
+        self.output_retries_max = 3
 
         self.start_production()
 
@@ -366,12 +367,34 @@ class PadmeProdServer:
         os.chdir(job_dir)
     
         # Recover output files from job
-        print "\tRecovering job output from CE"
+        if self.debug: print "\tRecovering job output from CE"
         getout_cmd = "glite-ce-job-output -N %s"%ce_job_id
-        print "\t> %s"%getout_cmd
-        rc = subprocess.call(getout_cmd.split())
-        #for l in self.run_command(getout_cmd):
-        #    if self.debug: print l
+        #print "\t> %s"%getout_cmd
+        #rc = subprocess.call(getout_cmd.split())
+        
+        # Handle output files retrieval. Trap errors and allow for multiple retries
+        retries = 0
+        while True:
+
+            (rc,out,err) = self.execute_command(getout_cmd)
+            if rc == 0: break
+
+            print "  WARNING glite-ce-job-output returned error code %d"%rc
+            if self.debug:
+                print "- STDOUT -"
+                print out
+                print "- STDERR -"
+                print err
+
+            # Abort if too many attemps failed
+            retries += 1
+            if retries >= self.output_retries_max:
+                print "  WARNING unable to retrieve output files. Retried %d times"%retries
+                os.chdir(main_dir)
+                return False
+
+            # Wait a bit before retrying
+            time.sleep(5)
 
         # Get name of dir where output files are stored from the ce_job_id
         out_dir = ce_job_id[8:].replace(":","_").replace("/","_")
@@ -379,6 +402,7 @@ class PadmeProdServer:
         # Check if job output dir exists
         if not os.path.isdir(out_dir):
             print "WARNING Job output dir %s not found"%out_dir
+            os.chdir(main_dir)
             return False
 
         # Rename output dir with submission name
@@ -407,6 +431,7 @@ class PadmeProdServer:
         # There was a problem retrieving output files: return an error
         if not output_ok:
             print "WARNING Problems while retrieving job output files: job will not be purged from CE"
+            os.chdir(main_dir)
             return False
 
         # Output was correctly retrieved: job can be purged
