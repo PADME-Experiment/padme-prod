@@ -240,10 +240,11 @@ class PadmeProdServer:
                     job_resubmit = True
                 elif job_ce_status == "CANCELLED":
                     self.db.close_job_submit(job_sub_id,7)
-                    # Change to make CANCEL resubmittable for debugging purposes
-                    self.db.close_job(job_id,3)
-                    jobs_cancel += 1
-                    #job_resubmit = True
+                    # Use this to make CANCEL NOT resubmittable 
+                    #self.db.close_job(job_id,3)
+                    #jobs_cancel += 1
+                    # Use this to make CANCEL resubmittable
+                    job_resubmit = True
                 elif job_ce_status == "UNDEF":
                     self.db.set_job_submit_status(job_sub_id,8)
                     jobs_undef += 1
