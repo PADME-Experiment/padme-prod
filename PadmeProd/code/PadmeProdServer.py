@@ -102,13 +102,13 @@ class PadmeProdServer:
             self.ph.renew_voms_proxy(proxy_file)
     
             # Call method to check jobs status and handle each job accordingly
-            (jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef) = self.handle_jobs(prod_ce,job_id_list)
+            (jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef) = self.handle_jobs(prod_ce,job_id_list)
     
             # Show current production state
-            print "Jobs: submitted %d idle %d running %d success %d fail %d cancel %d undef %d"%(jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
+            print "Jobs: submitted %d idle %d running %d held %d success %d fail %d cancel %d undef %d"%(jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
 
             # If all jobs are in a final state, production is over
-            if jobs_submit+jobs_idle+jobs_active+jobs_undef == 0:
+            if jobs_submit+jobs_idle+jobs_active+jobs_held+jobs_undef == 0:
                 print "--- No unfinished jobs left: exiting ---"
                 break
 
@@ -145,6 +145,7 @@ class PadmeProdServer:
         jobs_submit = 0
         jobs_idle = 0
         jobs_active = 0
+        jobs_held = 0
         jobs_success = 0
         jobs_fail = 0
         jobs_cancel = 0
@@ -163,8 +164,8 @@ class PadmeProdServer:
         # 4: Unsuccessful (DONE-OK and NOT finalized)
         # 5: Failed (DONE-FAILED and finalized)
         # 6: Failed (DONE-FAILED and NOT finalized)
-        # 7: Cancelled (CANCELLED)
-        # 8: Undefined
+        # 7: Cancelled (CANCELLED,ABORTED)
+        # 8: Undefined (UNDEF,UNKNOWN)
 
         for job_id in job_id_list:
     
@@ -243,18 +244,22 @@ class PadmeProdServer:
                     else:
                         self.db.close_job_submit(job_sub_id,6)
                     job_resubmit = True
-                elif job_ce_status == "CANCELLED":
+                elif job_ce_status == "CANCELLED" or job_ce_status == "ABORTED":
                     self.db.close_job_submit(job_sub_id,7)
                     # Use this to make CANCEL NOT resubmittable 
                     #self.db.close_job(job_id,3)
                     #jobs_cancel += 1
                     # Use this to make CANCEL resubmittable
                     job_resubmit = True
-                elif job_ce_status == "UNDEF":
+                elif job_ce_status == "HELD":
+                    jobs_held += 1
+                elif job_ce_status == "UNDEF" or job_ce_status == "UNKNOWN":
                     self.db.set_job_submit_status(job_sub_id,8)
                     jobs_undef += 1
                 else:
                     print "  WARNING unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
+                    self.db.set_job_submit_status(job_sub_id,8)
+                    jobs_undef += 1
 
                 if job_resubmit:
 
@@ -272,7 +277,7 @@ class PadmeProdServer:
                         print "- %s %s RESUBMITTED"%(job_name,ce_job_id)
                         jobs_submit += 1
 
-        return (jobs_submit,jobs_idle,jobs_active,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
+        return (jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
     
     def submit_job(self,job_id,job_dir,prod_ce):
     
