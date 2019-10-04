@@ -30,7 +30,7 @@ class PadmeProdServer:
         self.prod_check_delay_spread = 120
 
         self.job_submissions_max = 3
-        self.output_retries_max = 3
+        self.retries_max = 3
 
         self.start_production()
 
@@ -208,7 +208,7 @@ class PadmeProdServer:
             if job_status == 1:
 
                 # Get info about running job from CE
-                (job_ce_status,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
+                (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
                 print "- %s %s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
 
                 # Register job delegation for proxy renewals
@@ -226,9 +226,14 @@ class PadmeProdServer:
                         self.db.set_job_wn_user(job_sub_id,job_local_user)
                 elif job_ce_status == "DONE-OK":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
-                        self.db.close_job_submit(job_sub_id,3)
-                        self.db.close_job(job_id,2)
-                        jobs_success += 1
+                        if job_exit_code == "0":
+                            self.db.close_job_submit(job_sub_id,3)
+                            self.db.close_job(job_id,2)
+                            jobs_success += 1
+                        else:
+                            print "  WARNING job id DONE_OK but RC is %s"%job_exit_code
+                            self.db.close_job_submit(job_sub_id,5)
+                            job_resubmit = True
                     else:
                         self.db.close_job_submit(job_sub_id,5)
                         job_resubmit = True
@@ -249,7 +254,7 @@ class PadmeProdServer:
                     self.db.set_job_submit_status(job_sub_id,8)
                     jobs_undef += 1
                 else:
-                    print "  WARNING - unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
+                    print "  WARNING unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
 
                 if job_resubmit:
 
@@ -336,43 +341,65 @@ class PadmeProdServer:
   
     def get_job_ce_status(self,ce_job_id):
     
+        status      = "UNDEF"
+        exit_code   = ""
+        worker_node = "UNKNOWN"
+        local_user  = "UNKNOWN"
+        delegation  = ""
+
         # Retrieve status of job
         job_status_cmd = "glite-ce-job-status --level 2 %s"%ce_job_id
-        if self.debug: print "> %s"%job_status_cmd
-        p = subprocess.Popen(job_status_cmd.split(),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        status_info = p.communicate()[0].split("\n")
-        status = "UNDEF"
-        worker_node = "UNKNOWN"
-        local_user = "UNKNOWN"
-        delegation = ""
-        #for l in self.run_command(job_status_cmd):
-        for l in status_info:
-            if self.debug >= 2: print l
-            r = re.match("^\s*Current Status\s+=\s+\[(.+)\].*$",l)
-            if r: status = r.group(1)
-            r = re.match("^\s*Worker Node\s+=\s+\[(.+)\].*$",l)
-            if r: worker_node = r.group(1)
-            r = re.match("^\s*Local User\s+=\s+\[(.+)\].*$",l)
-            if r: local_user = r.group(1)
-            r = re.match("^\s*Deleg Proxy ID\s+=\s+\[(.+)\].*$",l)
-            if r: delegation = r.group(1)
-        return (status,worker_node,local_user,delegation)
+
+        # Handle job status info collection. Trap errors and allow for multiple retries
+        retries = 0
+        while True:
+
+            (rc,out,err) = self.execute_command(job_status_cmd)
+            if rc == 0:
+                for l in iter(out.splitlines()):
+                    if self.debug >= 2: print l
+                    r = re.match("^\s*Current Status\s+=\s+\[(.+)\].*$",l)
+                    if r: status = r.group(1)
+                    r = re.match("^\s*ExitCode\s+=\s+\[(.+)\].*$",l)
+                    if r: exit_code = r.group(1)
+                    r = re.match("^\s*Worker Node\s+=\s+\[(.+)\].*$",l)
+                    if r: worker_node = r.group(1)
+                    r = re.match("^\s*Local User\s+=\s+\[(.+)\].*$",l)
+                    if r: local_user = r.group(1)
+                    r = re.match("^\s*Deleg Proxy ID\s+=\s+\[(.+)\].*$",l)
+                    if r: delegation = r.group(1)
+                break
+
+            print "  WARNING glite-ce-job-status returned error code %d"%rc
+            if self.debug:
+                print "- STDOUT -"
+                print out
+                print "- STDERR -"
+                print err
+
+            # Abort if too many attempts failed
+            retries += 1
+            if retries >= self.retries_max:
+                print "  WARNING unable to retrieve job status info. Retried %d times"%retries
+                break
+
+            # Wait a bit before retrying
+            time.sleep(5)
+
+        return (status,exit_code,worker_node,local_user,delegation)
   
     def finalize_job(self,job_id,job_sub_id,ce_job_id):
     
         # Save main directory, i.e. top production manager directory
         main_dir = os.getcwd()
     
-        # Go to job working directory
-        job_dir = self.db.get_job_dir(job_id)
-        os.chdir(job_dir)
+        # Go to job working directory (do not forget to go back to main_dir before returning!)
+        os.chdir(self.db.get_job_dir(job_id))
     
         # Recover output files from job
         if self.debug: print "\tRecovering job output from CE"
-        getout_cmd = "glite-ce-job-output -N %s"%ce_job_id
-        #print "\t> %s"%getout_cmd
-        #rc = subprocess.call(getout_cmd.split())
-        
+        getout_cmd = "glite-ce-job-output --noint %s"%ce_job_id
+   
         # Handle output files retrieval. Trap errors and allow for multiple retries
         retries = 0
         while True:
@@ -387,9 +414,9 @@ class PadmeProdServer:
                 print "- STDERR -"
                 print err
 
-            # Abort if too many attemps failed
+            # Abort if too many attempts failed
             retries += 1
-            if retries >= self.output_retries_max:
+            if retries >= self.retries_max:
                 print "  WARNING unable to retrieve output files. Retried %d times"%retries
                 os.chdir(main_dir)
                 return False

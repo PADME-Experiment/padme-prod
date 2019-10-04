@@ -199,20 +199,20 @@ def main(argv):
         PROD_YEAR = r.group(1)
     else:
         if PROD_YEAR:
-            print "WARNING: run name \'%s\' has an unrecognized format: using year %s"%(PROD_RUN_NAME,PROD_YEAR)
+            if PROD_DEBUG: print "Run name format \'%s\' is unknown: using year %s"%(PROD_RUN_NAME,PROD_YEAR)
         else:
-            print "*** ERROR *** run name \'%s\' has an unrecognized format and no year was specified"%PROD_RUN_NAME
+            print "*** ERROR *** run name format \'%s\' is unknown and no year was specified"%PROD_RUN_NAME
             print_help()
             sys.exit(2)
-
-    if PROD_NAME == "":
-        PROD_NAME = "%s_%s"%(PROD_RUN_NAME,PROD_RECO_VERSION)
-        print "WARNING: No Production Name was specified. Using %s"%PROD_NAME
 
     if PROD_FILES_PER_JOB < 0 or PROD_FILES_PER_JOB > 1000:
         print "*** ERROR *** Invalid number of files per job requested:",PROD_FILES_PER_JOB,"- Max allowed: 1000."
         print_help()
         sys.exit(2)
+
+    if PROD_NAME == "":
+        PROD_NAME = "%s_%s"%(PROD_RUN_NAME,PROD_RECO_VERSION)
+        if PROD_DEBUG: print "No Production Name specified: using %s"%PROD_NAME
 
     if PROD_STORAGE_DIR == "":
         PROD_STORAGE_DIR = "/daq/%s/recodata/%s"%(PROD_YEAR,PROD_NAME)
@@ -221,15 +221,17 @@ def main(argv):
         PROD_DIR = "prod/%s"%PROD_NAME
 
     # Show info about required production
-    print
-    print "Starting production %s for run %s using PadmeReco version %s"%(PROD_NAME,PROD_RUN_NAME,PROD_RECO_VERSION)
-    print "Submitting jobs of %d files to CE %s"%(PROD_FILES_PER_JOB,PROD_CE)
-    print "Main production directory: %s"%PROD_DIR
-    print "Production script: %s"%PROD_SCRIPT
-    print "Storage SRM: %s"%PROD_SRM
-    print "Storage directory: %s"%PROD_STORAGE_DIR
+    print "- Starting production %s"%PROD_NAME
+    print "- Processing run %s"%PROD_RUN_NAME
+    print "- PadmeReco version %s"%PROD_RECO_VERSION
+    print "- Each job will process %d rawdata files"%PROD_FILES_PER_JOB
+    print "- Submitting jobs to CE %s"%PROD_CE
+    print "- Main production directory: %s"%PROD_DIR
+    print "- Production script: %s"%PROD_SCRIPT
+    print "- Storage SRM: %s"%PROD_SRM
+    print "- Storage directory: %s"%PROD_STORAGE_DIR
     if PROD_DEBUG:
-        "Debug level: %d"%PROD_DEBUG
+        print "- Debug level: %d"%PROD_DEBUG
         PH.debug = PROD_DEBUG
 
     # Check if production dir already exists
@@ -253,6 +255,11 @@ def main(argv):
                 shutil.copyfile(PROD_PROXY_FILE,JOB_PROXY_FILE)
             except:
                 print "*** ERROR *** Unable to copy long-lived proxy file %s to %s"%(PROD_PROXY_FILE,JOB_PROXY_FILE)
+                sys.exit(2)
+            try:
+                os.chmod(JOB_PROXY_FILE,0o600)
+            except:
+                print "*** ERROR *** Unable to set access permissions of long-lived proxy file %s"%JOB_PROXY_FILE
                 sys.exit(2)
         else:
             print "*** ERROR *** Long-lived proxy file %s was not found"%PROD_PROXY_FILE
@@ -303,10 +310,19 @@ def main(argv):
 
         # Create dir to hold individual job info
         jobDir = "%s/%s"%(PROD_DIR,jobName)
-        os.mkdir(jobDir)
+        try:
+            os.mkdir(jobDir)
+        except:
+            print "*** ERROR *** Unable to create job directory %s"%jobDir
+            sys.exit(2)
 
         # Copy production script to job dir
-        shutil.copyfile(PROD_SCRIPT,"%s/job.py"%jobDir)
+        jobScript = "%s/job.py"%jobDir
+        try:
+            shutil.copyfile(PROD_SCRIPT,jobScript)
+        except:
+            print "*** ERROR *** Unable to copy job script file %s to %s"%(PROD_SCRIPT,jobScript)
+            sys.exit(2)
 
         # Configuration file is empty for Reco
         jobCfg = ""
@@ -317,22 +333,32 @@ def main(argv):
             for f in job_file_lists[j]: jlf.write("%s\n"%f)
 
         # Copy long-lived proxy file to job dir
-        shutil.copyfile(JOB_PROXY_FILE,"%s/job.proxy"%jobDir)
+        jobProxy = "%s/job.proxy"%jobDir
+        try:
+            shutil.copyfile(JOB_PROXY_FILE,jobProxy)
+        except:
+            print "*** ERROR *** Unable to copy job proxy file %s to %s"%(JOB_PROXY_FILE,jobProxy)
+            sys.exit(2)
+        try:
+            os.chmod(jobProxy,0o600)
+        except:
+            print "*** ERROR *** Unable to set access permissions of job proxy file %s"%jobProxy
+            sys.exit(2)
 
         # Create JDL file in job dir
-        jf = open("%s/job.jdl"%jobDir,"w")
-	jf.write("[\n")
-	jf.write("Type = \"Job\";\n")
-	jf.write("JobType = \"Normal\";\n")
-	jf.write("Executable = \"/usr/bin/python\";\n")
-	jf.write("Arguments = \"-u job.py job.list job.proxy %s %s %s %s %s\";\n"%(PROD_NAME,jobName,PROD_RECO_VERSION,PROD_STORAGE_DIR,PROD_SRM))
-	jf.write("StdOutput = \"job.out\";\n")
-	jf.write("StdError = \"job.err\";\n")
-	jf.write("InputSandbox = {\"job.py\",\"job.list\",\"job.proxy\"};\n")
-	jf.write("OutputSandbox = {\"job.out\", \"job.err\", \"job.sh\"};\n")
-	jf.write("OutputSandboxBaseDestURI=\"gsiftp://localhost\";\n")
-	jf.write("]\n")
-        jf.close()
+        jobJDL = "%s/job.jdl"%jobDir
+        with open(jobJDL,"w") as jf:
+            jf.write("[\n")
+            jf.write("Type = \"Job\";\n")
+            jf.write("JobType = \"Normal\";\n")
+            jf.write("Executable = \"/usr/bin/python\";\n")
+            jf.write("Arguments = \"-u job.py job.list job.proxy %s %s %s %s %s\";\n"%(PROD_NAME,jobName,PROD_RECO_VERSION,PROD_STORAGE_DIR,PROD_SRM))
+            jf.write("StdOutput = \"job.out\";\n")
+            jf.write("StdError = \"job.err\";\n")
+            jf.write("InputSandbox = {\"job.py\",\"job.list\",\"job.proxy\"};\n")
+            jf.write("OutputSandbox = {\"job.out\", \"job.err\", \"job.sh\"};\n")
+            jf.write("OutputSandboxBaseDestURI=\"gsiftp://localhost\";\n")
+            jf.write("]\n")
 
         # Create job entry in DB and register job
         with open(jobListFile,"r") as jlf: jobList = jlf.read()
