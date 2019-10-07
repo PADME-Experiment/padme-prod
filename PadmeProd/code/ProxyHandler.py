@@ -11,6 +11,9 @@ class ProxyHandler:
         # Set to 1 or more to enable printout of executed commands
         self.debug = 0
 
+        # Define VOMS proxy validity in hours
+        self.proxy_validity = 24
+
         # These need to be set from calling program to enable delegation renewal
         self.cream_ce_endpoint = ""
         self.delegations = []
@@ -31,15 +34,15 @@ class ProxyHandler:
             if r and int(r.group(1))>=2: renew = False
 
         if renew:
-            print "- VOMS proxy is missing or will expire in less than 2 hours."
+            if self.debug: print "- VOMS proxy is missing or will expire in less than 2 hours."
             self.create_voms_proxy(long_proxy_file)
             self.renew_delegations()
 
     def create_voms_proxy(self,long_proxy_file):
 
-        # Create a 24h VOMS proxy from long lived proxy
-        print "- Creating VOMS proxy using %s"%long_proxy_file
-        cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(long_proxy_file,long_proxy_file)
+        # Create a VOMS proxy from long lived proxy
+        if self.debug: print "- Creating VOMS proxy using %s"%long_proxy_file
+        cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid %d:00"%(long_proxy_file,long_proxy_file,self.proxy_validity)
         for line in self.run_command(cmd):
             if self.debug: print line.rstrip()
 
@@ -47,7 +50,7 @@ class ProxyHandler:
 
         # Renew delegations to all jobs using new VOMS proxy
         if self.cream_ce_endpoint and self.delegations:
-            print "- Renewing proxy delegations using new VOMS proxy"
+            if self.debug: print "- Renewing proxy delegations using new VOMS proxy"
             cmd = "glite-ce-proxy-renew --endpoint %s %s"%(self.cream_ce_endpoint,' '.join(self.delegations))
             for line in self.run_command(cmd):
                 if self.debug: print line.rstrip()
