@@ -29,15 +29,18 @@ class PadmeProdServer:
         self.prod_check_delay = 180
         self.prod_check_delay_spread = 120
 
-        self.job_submissions_max = 3
+        # Number of times job submission must retry before giving up and delay between attempts
+        self.job_submission_max = 5
+        self.job_submission_delay = 30
+
+        # Number of times glite commands must retry before giving up and delay between attempts
         self.retries_max = 3
+        self.retries_delay = 10
+
+        # Number of times a job can be resubmitted before giving up
+        self.resubmit_max = 3
 
         self.start_production()
-
-    def run_command(self,command):
-        if self.debug: print "> %s"%command
-        p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-        return iter(p.stdout.readline,b'')
 
     def execute_command(self,command):
         if self.debug: print "> %s"%command
@@ -174,35 +177,44 @@ class PadmeProdServer:
             # If status is 0, job was not submitted yet: do it now
             if job_status == 0:
                 (job_sub_id,ce_job_id) = self.submit_job(job_id,job_dir,prod_ce)
-                print "- %s %s SUBMITTED"%(job_name,ce_job_id)
-                self.db.set_job_status(job_id,1)
-                jobs_submit += 1
+                if job_sub_id and ce_job_id:
+                    print "- %-8s %-60s SUBMITTED"%(job_name,ce_job_id)
+                    self.db.set_job_status(job_id,1)
+                    jobs_submit += 1
+                else:
+                    print "- %-8s %-60s %s"%(job_name,"UNDEF","SUBMIT_FAILED")
+                    self.db.close_job(job_id,3)
+                    jobs_fail += 1
                 continue
 
-            # Get info about associated job submission
+            # Get info about associated latest job submission (if any)
             job_sub_id = self.db.get_job_submit_id(job_id)
-            (job_sub_index,job_sub_status,ce_job_id,worker_node,wn_user) = self.db.get_job_submit_info(job_sub_id)
+            if job_sub_id:
+                (job_sub_index,job_sub_status,ce_job_id,worker_node,wn_user) = self.db.get_job_submit_info(job_sub_id)
 
             # Status 2: Job was successful
             if job_status == 2:
-                print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output OK")
+                print "- %-8s %-60s %s"%(job_name,ce_job_id,"DONE_OK - Output OK")
                 jobs_success += 1
                 continue
 
             # Status 3: Job failed. Show how it failed
             if job_status == 3:
-                if job_sub_status == 4:
-                    print "- %s %s %s"%(job_name,ce_job_id,"DONE_OK - Output Fail")
-                    jobs_fail += 1
-                if job_sub_status == 5:
-                    print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output OK")
-                    jobs_fail += 1
-                if job_sub_status == 6:
-                    print "- %s %s %s"%(job_name,ce_job_id,"DONE_FAILED - Output Fail")
-                    jobs_fail += 1
-                if job_sub_status == 7:
-                    print "- %s %s %s"%(job_name,ce_job_id,"CANCELLED")
-                    jobs_cancel += 1
+                if job_sub_id:
+                    if job_sub_status == 4:
+                        print "- %-8s %-60s %s"%(job_name,ce_job_id,"DONE_OK - Output Fail")
+                        jobs_fail += 1
+                    if job_sub_status == 5:
+                        print "- %-8s %-60s %s"%(job_name,ce_job_id,"DONE_FAILED - Output OK")
+                        jobs_fail += 1
+                    if job_sub_status == 6:
+                        print "- %-8s %-60s %s"%(job_name,ce_job_id,"DONE_FAILED - Output Fail")
+                        jobs_fail += 1
+                    if job_sub_status == 7:
+                        print "- %-8s %-60s %s"%(job_name,ce_job_id,"CANCELLED")
+                        jobs_cancel += 1
+                else:
+                    print "- %-8s %-60s %s"%(job_name,"UNDEF","SUBMIT_FAILED")
                 continue
 
             # Status is 1: Job is being processed
@@ -210,7 +222,7 @@ class PadmeProdServer:
 
                 # Get info about running job from CE
                 (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
-                print "- %s %s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
+                print "- %-8s %-60s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
 
                 # Register job delegation for proxy renewals
                 self.ph.delegations.append(job_delegation)
@@ -244,12 +256,16 @@ class PadmeProdServer:
                     else:
                         self.db.close_job_submit(job_sub_id,6)
                     job_resubmit = True
-                elif job_ce_status == "CANCELLED" or job_ce_status == "ABORTED":
+                elif job_ce_status == "CANCELLED":
+                    self.finalize_job(job_id,job_sub_id,ce_job_id):
                     self.db.close_job_submit(job_sub_id,7)
                     # Use this to make CANCEL NOT resubmittable 
                     #self.db.close_job(job_id,3)
                     #jobs_cancel += 1
                     # Use this to make CANCEL resubmittable
+                    job_resubmit = True
+                elif job_ce_status == "ABORTED":
+                    self.db.close_job_submit(job_sub_id,7)
                     job_resubmit = True
                 elif job_ce_status == "HELD":
                     jobs_held += 1
@@ -266,16 +282,22 @@ class PadmeProdServer:
                     # If we get here, the job was either DONE-FAILED or DONE-OK but with problems in the
                     # output files: see if we can resubmit it
 
-                    if self.db.get_job_submissions(job_id) >= self.job_submissions_max:
+                    resubmit = self.db.get_job_submissions(job_id)
+                    if resubmit >= self.resubmit_max:
                         # Job was resubmitted too many times, tag it as failed
-                        print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,self.job_submissions_max)
+                        print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,resubmit)
                         self.db.close_job(job_id,3)
                         jobs_fail += 1
                     else:
                         # Resubmit the job
                         (job_sub_id,ce_job_id) = self.submit_job(job_id,job_dir,prod_ce)
-                        print "- %s %s RESUBMITTED"%(job_name,ce_job_id)
-                        jobs_submit += 1
+                        if job_sub_id and ce_job_id:
+                            print "- %s %s RESUBMITTED"%(job_name,ce_job_id)
+                            jobs_submit += 1
+                        else:
+                            print " WARNING - unable to resubmit job: tagging it as failed"
+                            self.db.close_job(job_id,3)
+                            jobs_fail += 1
 
         return (jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
     
@@ -292,13 +314,6 @@ class PadmeProdServer:
 
         # Submit job and log event to DB
         submit_cmd = "glite-ce-job-submit --autm-delegation --resource %s job.jdl"%prod_ce
-
-        #p = subprocess.Popen(submit_cmd.split(),stdin=None,stdout=subprocess.PIPE)
-        #ce_job_id = p.communicate()[0].rstrip()
-
-        #for l in self.run_command(submit_cmd):
-        #    if self.debug: print l.rstrip()
-        #    if l: ce_job_id = l.rstrip()
 
         # Handle job submission trapping errors and allowing for multiple retries
         submits = 0
@@ -322,19 +337,17 @@ class PadmeProdServer:
 
             # Submission failed: show debug output
             if self.debug:
-                print "- STDOUT -"
-                print out
-                print "- STDERR -"
-                print err
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
 
-            # Abort if too many attemps failed
+            # Abort job if too many attemps failed
             submits += 1
-            if submits >= self.job_submissions_max:
-                print "*** ERROR *** Job submission failed %d times. Aborting"%self.job_submissions_max
-                sys.exit(1)
+            if submits >= self.job_submission_max:
+                print "*** ERROR *** Job submission failed %d times."%submits
+                return (None,None)
 
             # Wait a bit before retrying
-            time.sleep(10)
+            time.sleep(self.job_submission_delay)
 
         self.db.set_job_submitted(job_sub_id,ce_job_id)
     
@@ -377,10 +390,8 @@ class PadmeProdServer:
 
             print "  WARNING glite-ce-job-status returned error code %d"%rc
             if self.debug:
-                print "- STDOUT -"
-                print out
-                print "- STDERR -"
-                print err
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
 
             # Abort if too many attempts failed
             retries += 1
@@ -389,7 +400,7 @@ class PadmeProdServer:
                 break
 
             # Wait a bit before retrying
-            time.sleep(5)
+            time.sleep(self.retries_delay)
 
         return (status,exit_code,worker_node,local_user,delegation)
   
@@ -414,10 +425,8 @@ class PadmeProdServer:
 
             print "  WARNING glite-ce-job-output returned error code %d"%rc
             if self.debug:
-                print "- STDOUT -"
-                print out
-                print "- STDERR -"
-                print err
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
 
             # Abort if too many attempts failed
             retries += 1
@@ -427,7 +436,7 @@ class PadmeProdServer:
                 return False
 
             # Wait a bit before retrying
-            time.sleep(5)
+            time.sleep(self.retries_delay)
 
         # Get name of dir where output files are stored from the ce_job_id
         out_dir = ce_job_id[8:].replace(":","_").replace("/","_")
@@ -468,12 +477,14 @@ class PadmeProdServer:
             return False
 
         # Output was correctly retrieved: job can be purged
-        print "\tPurging job from CE"
+        if self.debug: print "\tPurging job from CE"
         purge_job_cmd = "glite-ce-job-purge -N %s"%ce_job_id
-        print "\t> %s"%purge_job_cmd
-        rc = subprocess.call(purge_job_cmd.split())
-        #for l in self.run_command(purge_job_cmd):
-        #    if self.debug: print l
+        (rc,out,err) = self.execute_command(purge_job_cmd)
+        if rc:
+            print "  WARNING glite-ce-job-purge returned error code %d"%rc
+            if self.debug:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
 
         # Scan log file looking for some information
 

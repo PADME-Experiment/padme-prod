@@ -204,6 +204,7 @@ class PadmeMCDB:
         c.execute("""SELECT COUNT(*) FROM job_submit WHERE job_id=%s""",(job_id,))
         res = c.fetchone()
         self.conn.commit()
+        if (res == None): return 0
         (n_subs,) = res
         return n_subs
 
@@ -249,7 +250,10 @@ class PadmeMCDB:
         max_index = 0
         c.execute("""SELECT MAX(submit_index) FROM job_submit WHERE job_id = %s""",(job_id,))
         res = c.fetchone()
-        if res != None and res[0] != None: (max_index,) = res
+        if res == None:
+            self.conn.commit()
+            return None
+        (max_index,) = res
 
         c.execute("""SELECT id FROM job_submit WHERE job_id = %s AND submit_index = %s""",(job_id,max_index))
         res = c.fetchone()
