@@ -63,7 +63,17 @@ PROD_RUN_LIST = []
 def print_help():
 
     print "%s [-L <run_list_file>] [-r <run>] [-j <files_per_job>] [-v <version>] [-s <submission_site>] [-Q <CE_queue>] [-P <CE_port>] [-d <storage_site>] [-D <submit_delay>] [-V] [-h]"%SCRIPT_NAME
+    print "  -L <run_list_file>\tfile with list of runs to process"
+    print "  -r <run_name>\t\tname of run to process"
+    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: %s"%PROD_RECO_VERSION
+    print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
+    print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE_LIST.keys()),PROD_RUN_SITE)
+    print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT_DEFAULT
+    print "  -Q <CE_queue>\t\tCE queue to use for submission. Default from submission site"
+    print "  -d <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_STORAGE_SITES),PROD_STORAGE_SITE)
+    print "  -D <submit_delay>\tDelay in sec between run submissions. Default: %d sec"%PROD_SUBMIT_DELAY
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
+    print "  N.B. Multiple -L and -r options can be combined to create a single list of runs. Duplicated runs will be automatically removed."
 
 def add_run(run):
 

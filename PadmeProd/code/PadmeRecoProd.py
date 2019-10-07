@@ -67,7 +67,7 @@ def print_help():
     print "PadmeRecoProd -r <run_name> [-y <year>] [-j <files_per_job>] [-v <version>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-V] [-h]"
     print "  -r <run_name>\t\tname of the run to process"
     print "  -y <year>\t\t\tyear of run. N.B. used only if run name is not self-documenting"
-    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: develop"
+    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: %s"%PROD_RECO_VERSION
     print "  -n <prod_name>\tname for the production. Default: <run_name>_<version>"
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
