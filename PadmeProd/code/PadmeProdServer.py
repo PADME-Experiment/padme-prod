@@ -18,6 +18,7 @@ class PadmeProdServer:
 
         self.db = PadmeMCDB()
 
+        # Create ProxyHandler and set its debug level. Later the voms_proxy file will be added.
         self.ph = ProxyHandler()
         self.ph.debug = debug
 
@@ -81,7 +82,13 @@ class PadmeProdServer:
         sys.stdout = Logger(log_file_name)
         err_file_name = "%s/%s.err"%(prod_dir,self.prod_name)
         sys.stderr = Logger(err_file_name)
-            
+
+        # Define name of VOMS proxy file which will be used for this production
+        # Assign it to the X509_USER_PROXY enivronment variable (used by glite commands) and to the ProxyHandler
+        voms_proxy = "%s/%s.voms"%(prod_dir,self.prod_name)
+        os.environ['X509_USER_PROXY'] = voms_proxy
+        self.ph.voms_proxy = voms_proxy
+
         # Get list of job ids for this production
         job_id_list = self.db.get_job_list(prod_id)
         if len(job_id_list) != prod_njobs:
