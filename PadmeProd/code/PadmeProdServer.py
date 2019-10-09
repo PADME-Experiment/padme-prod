@@ -86,10 +86,11 @@ class PadmeProdServer:
         err_file_name = "%s/%s.err"%(prod_dir,self.prod_name)
         sys.stderr = Logger(err_file_name)
 
-        # Define name of VOMS proxy file which will be used for this production
-        # Assign it to the X509_USER_PROXY enivronment variable (used by glite commands) and to the ProxyHandler
-        voms_proxy = "%s/%s.voms"%(prod_dir,self.prod_name)
+        # Define absolute path of VOMS proxy file which will be used for this production
+        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
+        # Assign it to the X509_USER_PROXY enivronment variable (used by glite commands)
         os.environ['X509_USER_PROXY'] = voms_proxy
+        # Pass it to the ProxyHandler
         self.ph.voms_proxy = voms_proxy
 
         # Define name of control file: if found, this production will cleanly quit
@@ -247,7 +248,7 @@ class PadmeProdServer:
 
                 # Get info about running job from CE
                 (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status(ce_job_id)
-                print "- %-8s %-60s %s %s@%s %s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node,job_description)
+                print "- %-8s %-60s %s %s@%s '%s'"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node,job_description)
 
                 # Register job delegation for proxy renewals
                 self.ph.delegations.append(job_delegation)
@@ -450,7 +451,7 @@ class PadmeProdServer:
         os.chdir(self.db.get_job_dir(job_id))
     
         # Recover output files from job
-        if self.debug: print "\tRecovering job output from CE"
+        if self.debug: print "  Recovering job output from CE"
         getout_cmd = "glite-ce-job-output --noint %s"%ce_job_id
    
         # Handle output files retrieval. Trap errors and allow for multiple retries
@@ -480,7 +481,7 @@ class PadmeProdServer:
 
         # Check if job output dir exists
         if not os.path.isdir(out_dir):
-            print "WARNING Job output dir %s not found"%out_dir
+            print "  WARNING Job output dir %s not found"%out_dir
             os.chdir(main_dir)
             return False
 
@@ -495,26 +496,26 @@ class PadmeProdServer:
         out_file = "%s/job.out"%sub_dir
         if not os.path.exists(out_file):
             output_ok = False
-            print "WARNING File %s not found"%out_file
+            print "  WARNING File %s not found"%out_file
     
         err_file = "%s/job.err"%sub_dir
         if not os.path.exists(err_file):
             output_ok = False
-            print "WARNING File %s not found"%err_file
+            print "  WARNING File %s not found"%err_file
     
         sh_file  = "%s/job.sh"%sub_dir
         if not os.path.exists(sh_file):
             output_ok = False
-            print "WARNING File %s not found"%sh_file
+            print "  WARNING File %s not found"%sh_file
 
         # There was a problem retrieving output files: return an error
         if not output_ok:
-            print "WARNING Problems while retrieving job output files: job will not be purged from CE"
+            print "  WARNING Problems while retrieving job output files: job will not be purged from CE"
             os.chdir(main_dir)
             return False
 
         # Output was correctly retrieved: job can be purged
-        if self.debug: print "\tPurging job from CE"
+        if self.debug: print "  Purging job from CE"
         purge_job_cmd = "glite-ce-job-purge -N %s"%ce_job_id
         (rc,out,err) = self.execute_command(purge_job_cmd)
         if rc:
@@ -601,35 +602,35 @@ class PadmeProdServer:
         jof.close()
 
         if worker_node:
-            print "\tJob run on worker node %s"%worker_node
+            print "  Job run on worker node %s"%worker_node
             self.db.set_job_worker_node(job_id,worker_node)
 
         if wn_user:
-            print "\tJob run as user %s"%wn_user
+            print "  Job run as user %s"%wn_user
             self.db.set_job_wn_user(job_id,wn_user)
 
         if wn_dir:
-            print "\tJob run in directory %s"%wn_dir
+            print "  Job run in directory %s"%wn_dir
             self.db.set_job_wn_dir(job_id,wn_dir)
 
         if time_start:
-            print "\tJob started at %s (UTC)"%time_start
+            print "  Job started at %s (UTC)"%time_start
             self.db.set_job_time_start(job_id,time_start)
 
         if time_end:
-            print "\tJob ended at %s (UTC)"%time_end
+            print "  Job ended at %s (UTC)"%time_end
             self.db.set_job_time_end(job_id,time_end)
 
         if prog_start:
-            print "\tProgram started at %s (UTC)"%prog_start
+            print "  Program started at %s (UTC)"%prog_start
             self.db.set_run_time_start(job_id,prog_start)
 
         if prog_end:
-            print "\tProgram ended at %s (UTC)"%prog_end
+            print "  Program ended at %s (UTC)"%prog_end
             self.db.set_run_time_end(job_id,prog_end)
 
         if reco_processed_events:
-            print "\tJob processed %s events"%reco_processed_events
+            print "  Job processed %s events"%reco_processed_events
             self.db.set_job_n_events(job_id,reco_processed_events)
 
         if file_list:

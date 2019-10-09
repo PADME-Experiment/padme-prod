@@ -3,6 +3,7 @@
 import re
 import subprocess
 import shlex
+import os
 
 class ProxyHandler:
 
