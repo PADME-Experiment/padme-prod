@@ -197,8 +197,16 @@ def main(argv):
     # CEs at submission site will be used in round robin to avoid overload
     PROD_CE_INDEX = 0
 
+    first = True
     for run in PROD_RUN_LIST:
 
+        if first:
+            first = False
+        else:
+            # Wait before submitting next run
+            time.sleep(PROD_SUBMIT_DELAY)
+
+        print
         print "=== Submitting run %s"%run
 
         # Choose CE from site list and extract port number (if any)
@@ -226,9 +234,6 @@ def main(argv):
         # Change CE for next run
         PROD_CE_INDEX += 1
         if PROD_CE_INDEX >= len(PADME_CE_NODE_LIST[PROD_RUN_SITE]): PROD_CE_INDEX = 0
-
-        # Wait before submitting next run
-        time.sleep(PROD_SUBMIT_DELAY)
 
 # Execution starts here
 if __name__ == "__main__": main(sys.argv[1:])
