@@ -228,8 +228,8 @@ class PadmeProdServer:
             if job_status == 1:
 
                 # Get info about running job from CE
-                (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
-                print "- %-8s %-60s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
+                (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status(ce_job_id)
+                print "- %-8s %-60s %s %s@%s %s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node,job_description)
 
                 # Register job delegation for proxy renewals
                 self.ph.delegations.append(job_delegation)
@@ -247,32 +247,32 @@ class PadmeProdServer:
                 elif job_ce_status == "DONE-OK":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
                         if job_exit_code == "0":
-                            self.db.close_job_submit(job_sub_id,3)
+                            self.db.close_job_submit(job_sub_id,3,job_description)
                             self.db.close_job(job_id,2)
                             jobs_success += 1
                         else:
                             print "  WARNING job id DONE_OK but RC is %s"%job_exit_code
-                            self.db.close_job_submit(job_sub_id,5)
+                            self.db.close_job_submit(job_sub_id,5,job_description)
                             job_resubmit = True
                     else:
-                        self.db.close_job_submit(job_sub_id,5)
+                        self.db.close_job_submit(job_sub_id,5,job_description)
                         job_resubmit = True
                 elif job_ce_status == "DONE-FAILED":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
-                        self.db.close_job_submit(job_sub_id,4)
+                        self.db.close_job_submit(job_sub_id,4,job_description)
                     else:
-                        self.db.close_job_submit(job_sub_id,6)
+                        self.db.close_job_submit(job_sub_id,6,job_description)
                     job_resubmit = True
                 elif job_ce_status == "CANCELLED":
                     self.finalize_job(job_id,job_sub_id,ce_job_id)
-                    self.db.close_job_submit(job_sub_id,7)
+                    self.db.close_job_submit(job_sub_id,7,job_description)
                     # Use this to make CANCEL NOT resubmittable 
                     #self.db.close_job(job_id,3)
                     #jobs_cancel += 1
                     # Use this to make CANCEL resubmittable
                     job_resubmit = True
                 elif job_ce_status == "ABORTED":
-                    self.db.close_job_submit(job_sub_id,7)
+                    self.db.close_job_submit(job_sub_id,7,job_description)
                     job_resubmit = True
                 elif job_ce_status == "HELD":
                     jobs_held += 1
@@ -371,6 +371,7 @@ class PadmeProdServer:
         worker_node = "UNKNOWN"
         local_user  = "UNKNOWN"
         delegation  = ""
+        description = ""
 
         # Retrieve status of job
         job_status_cmd = "glite-ce-job-status --level 2 %s"%ce_job_id
@@ -393,6 +394,8 @@ class PadmeProdServer:
                     if r: local_user = r.group(1)
                     r = re.match("^\s*Deleg Proxy ID\s+=\s+\[(.+)\].*$",l)
                     if r: delegation = r.group(1)
+                    r = re.match("^\s*Description\s*=\s*\[(.*)\].*",l)
+                    if r: description = r.group(1)
                 break
 
             print "  WARNING glite-ce-job-status returned error code %d"%rc
@@ -409,7 +412,7 @@ class PadmeProdServer:
             # Wait a bit before retrying
             time.sleep(self.retries_delay)
 
-        return (status,exit_code,worker_node,local_user,delegation)
+        return (status,exit_code,worker_node,local_user,delegation,description)
   
     def finalize_job(self,job_id,job_sub_id,ce_job_id):
     
@@ -506,7 +509,7 @@ class PadmeProdServer:
 
         file_list = []
 
-        reco_processed_events = "0"
+        reco_processed_events = ""
         reco_tot_cpu_time = ""
         reco_tot_run_time = ""
         reco_tot_evtproc_cpu_time = ""

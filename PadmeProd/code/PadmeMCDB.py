@@ -110,7 +110,12 @@ class PadmeMCDB:
 
         total_events = 0
         for r in res:
-            if r[0] != None: total_events += int(r[0])
+            try:
+                n_events = int(r[0])
+            except:
+                n_events = 0
+            total_events += n_events
+
         return total_events
 
     def get_prod_id(self,name):
@@ -233,11 +238,13 @@ class PadmeMCDB:
         # Return job submission id
         return job_sub_id
 
-    def close_job_submit(self,job_sub_id,status):
+    def close_job_submit(self,job_sub_id,status,description=''):
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""UPDATE job_submit SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_sub_id))
+        if description:
+            c.execute("""UPDATE job_submit SET description = %s WHERE id = %s""",(description,job_sub_id))
         self.conn.commit()
 
     def get_job_submit_id(self,job_id):
