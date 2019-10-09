@@ -192,7 +192,7 @@ def main(argv):
         print "*** ERROR *** while generating long-lived proxy file %s"%PROD_PROXY_FILE
         sys.exit(2)
     # Create a new VOMS proxy using long-lived proxy
-    PH.create_voms_proxy(PROD_PROXY_FILE)
+    #PH.create_voms_proxy(PROD_PROXY_FILE)
 
     # CEs at submission site will be used in round robin to avoid overload
     PROD_CE_INDEX = 0

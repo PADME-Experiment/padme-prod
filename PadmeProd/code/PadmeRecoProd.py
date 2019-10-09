@@ -61,10 +61,11 @@ PROD_RECO_VERSION = "develop"
 PROD_PROXY_FILE = ""
 PROD_YEAR = ""
 PROD_DEBUG = 0
+PROD_DESCRIPTION = "TEST"
 
 def print_help():
 
-    print "PadmeRecoProd -r <run_name> [-y <year>] [-j <files_per_job>] [-v <version>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-V] [-h]"
+    print "PadmeRecoProd -r <run_name> [-y <year>] [-j <files_per_job>] [-v <version>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-V] [-h]"
     print "  -r <run_name>\t\tname of the run to process"
     print "  -y <year>\t\t\tyear of run. N.B. used only if run name is not self-documenting"
     print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: %s"%PROD_RECO_VERSION
@@ -76,6 +77,7 @@ def print_help():
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
     print "  -d <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
     print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
+    print "  -D <description>\tProduction description to be stored in the DB. Default: '%s'"%PROD_DESCRIPTION
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
 
 def run_command(command):
@@ -122,9 +124,10 @@ def main(argv):
     global PROD_PROXY_FILE
     global PROD_YEAR
     global PROD_DEBUG
+    global PROD_DESCRIPTION
 
     try:
-        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:C:P:Q:v:p:",[])
+        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:C:P:Q:v:p:D:",[])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -151,6 +154,8 @@ def main(argv):
             PROD_CE_QUEUE = arg
         elif opt == '-p':
             PROD_PROXY_FILE = arg
+        elif opt == '-D':
+            PROD_DESCRIPTION = arg
         elif opt == '-s':
             if arg in PADME_CE_NODE.keys():
                 PROD_RUN_SITE = arg
@@ -255,17 +260,18 @@ def main(argv):
                 shutil.copyfile(PROD_PROXY_FILE,JOB_PROXY_FILE)
             except:
                 print "*** ERROR *** Unable to copy long-lived proxy file %s to %s"%(PROD_PROXY_FILE,JOB_PROXY_FILE)
+                shutil.rmtree(PROD_DIR)
                 sys.exit(2)
             try:
                 os.chmod(JOB_PROXY_FILE,0o600)
             except:
                 print "*** ERROR *** Unable to set access permissions of long-lived proxy file %s"%JOB_PROXY_FILE
+                shutil.rmtree(PROD_DIR)
                 sys.exit(2)
         else:
             print "*** ERROR *** Long-lived proxy file %s was not found"%PROD_PROXY_FILE
+            shutil.rmtree(PROD_DIR)
             sys.exit(2)
-        # Check if VOMS proxy exists and is valid. Renew it if not
-        PH.renew_voms_proxy(JOB_PROXY_FILE)
     else:
         print "- Creating long-lived proxy file %s"%JOB_PROXY_FILE
         proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%JOB_PROXY_FILE
@@ -274,8 +280,10 @@ def main(argv):
             print "*** ERROR *** while generating long-lived proxy file %s"%JOB_PROXY_FILE
             shutil.rmtree(PROD_DIR)
             sys.exit(2)
-        # Create a new VOMS proxy using long-lived proxy
-        PH.create_voms_proxy(JOB_PROXY_FILE)
+
+    # Check if VOMS proxy exists and is valid. Renew it if not.
+    # This is needed to get list of files in this run and to create the storage dir on the SRM server
+    PH.renew_voms_proxy(JOB_PROXY_FILE)
 
     # Get list of files for run to reconstruct
     # All files are assumed to be on the LNF SE and available via the ROOTX protocol
@@ -292,8 +300,6 @@ def main(argv):
 
     # Create new production in DB
     print "- Creating new production in DB"
-    # This will improve when we have a web interface to handle production requests
-    PROD_DESCRIPTION = "TEST"
     prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,len(job_file_lists))
 
     # Create production directory in the storage SRM

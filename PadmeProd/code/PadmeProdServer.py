@@ -18,6 +18,7 @@ class PadmeProdServer:
 
         self.db = PadmeMCDB()
 
+        # Create ProxyHandler and set its debug level. Later the voms_proxy file will be added.
         self.ph = ProxyHandler()
         self.ph.debug = debug
 
@@ -39,6 +40,9 @@ class PadmeProdServer:
 
         # Number of times a job can be resubmitted before giving up
         self.resubmit_max = 3
+
+        # Set this flag to tell production to quit (cancel all jobs and exit)
+        self.prod_quit = False
 
         self.start_production()
 
@@ -81,7 +85,17 @@ class PadmeProdServer:
         sys.stdout = Logger(log_file_name)
         err_file_name = "%s/%s.err"%(prod_dir,self.prod_name)
         sys.stderr = Logger(err_file_name)
-            
+
+        # Define absolute path of VOMS proxy file which will be used for this production
+        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
+        # Assign it to the X509_USER_PROXY enivronment variable (used by glite commands)
+        os.environ['X509_USER_PROXY'] = voms_proxy
+        # Pass it to the ProxyHandler
+        self.ph.voms_proxy = voms_proxy
+
+        # Define name of control file: if found, this production will cleanly quit
+        quit_file = "%s/quit"%prod_dir
+
         # Get list of job ids for this production
         job_id_list = self.db.get_job_list(prod_id)
         if len(job_id_list) != prod_njobs:
@@ -104,6 +118,13 @@ class PadmeProdServer:
             # Renew proxy if needed
             self.ph.renew_voms_proxy(proxy_file)
     
+            # Check if quit control file exists
+            if os.path.exists(quit_file):
+                self.prod_quit = True
+                # When in quit mode, speed up final checks
+                self.prod_check_delay = 60
+                self.prod_check_delay_spread = 0
+
             # Call method to check jobs status and handle each job accordingly
             (jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef) = self.handle_jobs(prod_ce,job_id_list)
     
@@ -176,6 +197,11 @@ class PadmeProdServer:
     
             # If status is 0, job was not submitted yet: do it now
             if job_status == 0:
+                if self.prod_quit:
+                    print "- %-8s %-60s %s"%(job_name,"UNDEF","SUBMIT_CANCELLED")
+                    self.db.close_job(job_id,3)
+                    jobs_fail += 1
+                    continue
                 (job_sub_id,ce_job_id) = self.submit_job(job_id,job_dir,prod_ce)
                 if job_sub_id and ce_job_id:
                     print "- %-8s %-60s SUBMITTED"%(job_name,ce_job_id)
@@ -221,8 +247,8 @@ class PadmeProdServer:
             if job_status == 1:
 
                 # Get info about running job from CE
-                (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation) = self.get_job_ce_status(ce_job_id)
-                print "- %-8s %-60s %s %s@%s"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node)
+                (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status(ce_job_id)
+                print "- %-8s %-60s %s %s@%s '%s'"%(job_name,ce_job_id,job_ce_status,job_local_user,job_worker_node,job_description)
 
                 # Register job delegation for proxy renewals
                 self.ph.delegations.append(job_delegation)
@@ -230,8 +256,10 @@ class PadmeProdServer:
                 # Check current job status and update DB if it changed
                 job_resubmit = False
                 if job_ce_status == "PENDING" or job_ce_status == "REGISTERED" or job_ce_status == "IDLE":
+                    if self.prod_quit: self.cancel_job(ce_job_id)
                     jobs_idle += 1
                 elif job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING":
+                    if self.prod_quit: self.cancel_job(ce_job_id)
                     jobs_active += 1
                     if job_sub_status == 1:
                         self.db.set_job_submit_status(job_sub_id,2)
@@ -240,39 +268,42 @@ class PadmeProdServer:
                 elif job_ce_status == "DONE-OK":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
                         if job_exit_code == "0":
-                            self.db.close_job_submit(job_sub_id,3)
+                            self.db.close_job_submit(job_sub_id,3,job_description)
                             self.db.close_job(job_id,2)
                             jobs_success += 1
                         else:
                             print "  WARNING job id DONE_OK but RC is %s"%job_exit_code
-                            self.db.close_job_submit(job_sub_id,5)
+                            self.db.close_job_submit(job_sub_id,5,job_description)
                             job_resubmit = True
                     else:
-                        self.db.close_job_submit(job_sub_id,5)
+                        self.db.close_job_submit(job_sub_id,5,job_description)
                         job_resubmit = True
                 elif job_ce_status == "DONE-FAILED":
                     if self.finalize_job(job_id,job_sub_id,ce_job_id):
-                        self.db.close_job_submit(job_sub_id,4)
+                        self.db.close_job_submit(job_sub_id,4,job_description)
                     else:
-                        self.db.close_job_submit(job_sub_id,6)
+                        self.db.close_job_submit(job_sub_id,6,job_description)
                     job_resubmit = True
                 elif job_ce_status == "CANCELLED":
                     self.finalize_job(job_id,job_sub_id,ce_job_id)
-                    self.db.close_job_submit(job_sub_id,7)
+                    self.db.close_job_submit(job_sub_id,7,job_description)
                     # Use this to make CANCEL NOT resubmittable 
                     #self.db.close_job(job_id,3)
                     #jobs_cancel += 1
                     # Use this to make CANCEL resubmittable
                     job_resubmit = True
                 elif job_ce_status == "ABORTED":
-                    self.db.close_job_submit(job_sub_id,7)
+                    self.db.close_job_submit(job_sub_id,7,job_description)
                     job_resubmit = True
                 elif job_ce_status == "HELD":
+                    if self.prod_quit: self.cancel_job(ce_job_id)
                     jobs_held += 1
                 elif job_ce_status == "UNDEF" or job_ce_status == "UNKNOWN":
+                    if self.prod_quit: self.cancel_job(ce_job_id)
                     self.db.set_job_submit_status(job_sub_id,8)
                     jobs_undef += 1
                 else:
+                    if self.prod_quit: self.cancel_job(ce_job_id)
                     print "  WARNING unrecognized job status %s returned by glite-ce-job-status"%job_ce_status
                     self.db.set_job_submit_status(job_sub_id,8)
                     jobs_undef += 1
@@ -283,7 +314,11 @@ class PadmeProdServer:
                     # output files: see if we can resubmit it
 
                     resubmit = self.db.get_job_submissions(job_id)
-                    if resubmit >= self.resubmit_max:
+                    if self.prod_quit:
+                        print "  WARNING - production in quit mode: job %s will not be resubmitted"%job_name
+                        self.db.close_job(job_id,3)
+                        jobs_fail += 1
+                    elif resubmit >= self.resubmit_max:
                         # Job was resubmitted too many times, tag it as failed
                         print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,resubmit)
                         self.db.close_job(job_id,3)
@@ -364,6 +399,7 @@ class PadmeProdServer:
         worker_node = "UNKNOWN"
         local_user  = "UNKNOWN"
         delegation  = ""
+        description = ""
 
         # Retrieve status of job
         job_status_cmd = "glite-ce-job-status --level 2 %s"%ce_job_id
@@ -386,6 +422,8 @@ class PadmeProdServer:
                     if r: local_user = r.group(1)
                     r = re.match("^\s*Deleg Proxy ID\s+=\s+\[(.+)\].*$",l)
                     if r: delegation = r.group(1)
+                    r = re.match("^\s*Description\s*=\s*\[(.*)\].*",l)
+                    if r: description = r.group(1)
                 break
 
             print "  WARNING glite-ce-job-status returned error code %d"%rc
@@ -402,7 +440,7 @@ class PadmeProdServer:
             # Wait a bit before retrying
             time.sleep(self.retries_delay)
 
-        return (status,exit_code,worker_node,local_user,delegation)
+        return (status,exit_code,worker_node,local_user,delegation,description)
   
     def finalize_job(self,job_id,job_sub_id,ce_job_id):
     
@@ -413,7 +451,7 @@ class PadmeProdServer:
         os.chdir(self.db.get_job_dir(job_id))
     
         # Recover output files from job
-        if self.debug: print "\tRecovering job output from CE"
+        if self.debug: print "  Recovering job output from CE"
         getout_cmd = "glite-ce-job-output --noint %s"%ce_job_id
    
         # Handle output files retrieval. Trap errors and allow for multiple retries
@@ -443,7 +481,7 @@ class PadmeProdServer:
 
         # Check if job output dir exists
         if not os.path.isdir(out_dir):
-            print "WARNING Job output dir %s not found"%out_dir
+            print "  WARNING Job output dir %s not found"%out_dir
             os.chdir(main_dir)
             return False
 
@@ -458,26 +496,26 @@ class PadmeProdServer:
         out_file = "%s/job.out"%sub_dir
         if not os.path.exists(out_file):
             output_ok = False
-            print "WARNING File %s not found"%out_file
+            print "  WARNING File %s not found"%out_file
     
         err_file = "%s/job.err"%sub_dir
         if not os.path.exists(err_file):
             output_ok = False
-            print "WARNING File %s not found"%err_file
+            print "  WARNING File %s not found"%err_file
     
         sh_file  = "%s/job.sh"%sub_dir
         if not os.path.exists(sh_file):
             output_ok = False
-            print "WARNING File %s not found"%sh_file
+            print "  WARNING File %s not found"%sh_file
 
         # There was a problem retrieving output files: return an error
         if not output_ok:
-            print "WARNING Problems while retrieving job output files: job will not be purged from CE"
+            print "  WARNING Problems while retrieving job output files: job will not be purged from CE"
             os.chdir(main_dir)
             return False
 
         # Output was correctly retrieved: job can be purged
-        if self.debug: print "\tPurging job from CE"
+        if self.debug: print "  Purging job from CE"
         purge_job_cmd = "glite-ce-job-purge -N %s"%ce_job_id
         (rc,out,err) = self.execute_command(purge_job_cmd)
         if rc:
@@ -499,7 +537,7 @@ class PadmeProdServer:
 
         file_list = []
 
-        reco_processed_events = "0"
+        reco_processed_events = ""
         reco_tot_cpu_time = ""
         reco_tot_run_time = ""
         reco_tot_evtproc_cpu_time = ""
@@ -564,35 +602,35 @@ class PadmeProdServer:
         jof.close()
 
         if worker_node:
-            print "\tJob run on worker node %s"%worker_node
+            print "  Job run on worker node %s"%worker_node
             self.db.set_job_worker_node(job_id,worker_node)
 
         if wn_user:
-            print "\tJob run as user %s"%wn_user
+            print "  Job run as user %s"%wn_user
             self.db.set_job_wn_user(job_id,wn_user)
 
         if wn_dir:
-            print "\tJob run in directory %s"%wn_dir
+            print "  Job run in directory %s"%wn_dir
             self.db.set_job_wn_dir(job_id,wn_dir)
 
         if time_start:
-            print "\tJob started at %s (UTC)"%time_start
+            print "  Job started at %s (UTC)"%time_start
             self.db.set_job_time_start(job_id,time_start)
 
         if time_end:
-            print "\tJob ended at %s (UTC)"%time_end
+            print "  Job ended at %s (UTC)"%time_end
             self.db.set_job_time_end(job_id,time_end)
 
         if prog_start:
-            print "\tProgram started at %s (UTC)"%prog_start
+            print "  Program started at %s (UTC)"%prog_start
             self.db.set_run_time_start(job_id,prog_start)
 
         if prog_end:
-            print "\tProgram ended at %s (UTC)"%prog_end
+            print "  Program ended at %s (UTC)"%prog_end
             self.db.set_run_time_end(job_id,prog_end)
 
         if reco_processed_events:
-            print "\tJob processed %s events"%reco_processed_events
+            print "  Job processed %s events"%reco_processed_events
             self.db.set_job_n_events(job_id,reco_processed_events)
 
         if file_list:
@@ -606,3 +644,13 @@ class PadmeProdServer:
     
         # Need to define some error handling procedure
         return True
+
+    def cancel_job(self,ce_job_id):
+
+        cmd = "glite-ce-job-cancel --noint %s"%ce_job_id
+        (rc,out,err) = self.execute_command(cmd)
+        if rc != 0:
+            print "  WARNING Job %s cancel command returned error code %d"%(ce_job_id,rc)
+            if self.debug:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
