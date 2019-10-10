@@ -31,9 +31,6 @@ class PadmeProdServer:
         self.prod_check_delay = 180
         self.prod_check_delay_spread = 120
 
-        # Set this flag to tell production to quit (cancel all jobs and exit)
-        self.prod_quit = False
-
         self.start_production()
 
     def start_production(self):
@@ -107,9 +104,9 @@ class PadmeProdServer:
             # Renew proxy if needed
             self.ph.renew_voms_proxy(proxy_file)
     
-            # Check if quit control file exists
+            # Check quit control file and send quit command to all jobs if found.
             if os.path.exists(quit_file):
-                self.prod_quit = True
+                for job in job_list: job.prod_quit = True
                 # When in quit mode, speed up final checks
                 self.prod_check_delay = 60
                 self.prod_check_delay_spread = 0
