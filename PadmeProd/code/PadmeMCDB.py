@@ -189,49 +189,35 @@ class PadmeMCDB:
         res = c.fetchone()
         self.conn.commit()
         if (res == None): return ""
-        (job_dir,) = res
-        return job_dir
+        return res[0]
 
-    def get_job_info(self,job_id):
+    def get_job_name(self,job_id):
     
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""SELECT name,job_dir,status FROM job WHERE id=%s""",(job_id,))
+        c.execute("""SELECT name FROM job WHERE id=%s""",(job_id,))
         res = c.fetchone()
         self.conn.commit()
-        if (res == None): return (None,None,None)
-        return res
+        if (res == None): return ""
+        return res[0]
 
-    def get_job_submissions(self,job_id):
+    def get_job_status(self,job_id):
     
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""SELECT COUNT(*) FROM job_submit WHERE job_id=%s""",(job_id,))
+        c.execute("""SELECT status FROM job WHERE id=%s""",(job_id,))
         res = c.fetchone()
         self.conn.commit()
-        if (res == None): return 0
-        (n_subs,) = res
-        return n_subs
+        if (res == None): return -1
+        return res[0]
 
-    def create_job_submit(self,job_id):
+    def create_job_submit(self,job_id,job_sub_index):
 
         # Job submissions are created in idle status
         status = 0
 
-        # Assume that this is he first submission
-        index = 0
-
-        # Check if this is a resubmission
-        self.check_db()
-        c = self.conn.cursor()
-        c.execute("""SELECT MAX(submit_index) FROM job_submit WHERE job_id = %s""",(job_id,))
-        res = c.fetchone()
-        if res != None and res[0] != None:
-            (idx_max,) = res
-            index = idx_max+1
-
         # Create new job submission
-        c.execute("""INSERT INTO job_submit (job_id,submit_index,status,time_submit) VALUES (%s,%s,%s,%s)""",(job_id,index,status,self.__now__()))
+        c.execute("""INSERT INTO job_submit (job_id,submit_index,status,time_submit) VALUES (%s,%s,%s,%s)""",(job_id,job_sub_index,status,self.__now__()))
         job_sub_id = c.lastrowid
         self.conn.commit()
 
@@ -273,7 +259,7 @@ class PadmeMCDB:
     
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""SELECT submit_index,status,ce_job_id,worker_node,wn_user FROM job_submit WHERE id=%s""",(job_sub_id,))
+        c.execute("""SELECT status,worker_node,wn_user,description FROM job_submit WHERE id=%s""",(job_sub_id,))
         res = c.fetchone()
         self.conn.commit()
         return res
@@ -301,7 +287,7 @@ class PadmeMCDB:
 
     def set_job_submitted(self,job_sub_id,ce_job_id):
   
-        # Job status changes to 1 after submission
+        # Job status changes to 1 (REGISTERED) after submission
         status = 1
 
         self.check_db()
