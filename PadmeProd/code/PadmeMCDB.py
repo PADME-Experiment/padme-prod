@@ -100,7 +100,7 @@ class PadmeMCDB:
         c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_jobs_fail = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_jobs_fail,n_events,prod_id))
         self.conn.commit()
 
-    def set_prod_job_numbers(self,jobs_ok,jobs_fail):
+    def set_prod_job_numbers(self,prod_id,jobs_ok,jobs_fail):
 
         self.check_db()
         c = self.conn.cursor()
