@@ -88,17 +88,25 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
+        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs,n_jobs_ok,n_jobs_fail) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,0)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
         prod_id = c.lastrowid
         self.conn.commit()
         return prod_id
 
-    def close_prod(self,prod_id,n_jobs_ok,n_events):
+    def close_prod(self,prod_id,n_jobs_ok,n_jobs_fail,n_events):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_events,prod_id))
+        c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_jobs_fail = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_jobs_fail,n_events,prod_id))
         self.conn.commit()
+
+    def set_prod_job_numbers(self,jobs_ok,jobs_fail):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE production SET n_jobs_ok = %s, n_jobs_fail = %s WHERE id = %s""",(jobs_ok,jobs_fail,prod_id))
+        self.conn.commit()
+
 
     def get_prod_total_events(self,prod_id):
 
@@ -224,36 +232,16 @@ class PadmeMCDB:
         # Return job submission id
         return job_sub_id
 
-    def close_job_submit(self,job_sub_id,status,description=''):
+    def close_job_submit(self,job_sub_id,status,description='',exit_code=''):
 
         self.check_db()
         c = self.conn.cursor()
         c.execute("""UPDATE job_submit SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_sub_id))
         if description:
             c.execute("""UPDATE job_submit SET description = %s WHERE id = %s""",(description,job_sub_id))
+        if exit_code:
+            c.execute("""UPDATE job_submit SET exit_code = %s WHERE id = %s""",(exit_code,job_sub_id))
         self.conn.commit()
-
-    def get_job_submit_id(self,job_id):
-    
-        self.check_db()
-        c = self.conn.cursor()
-
-        # Find job submission with highest index
-
-        max_index = 0
-        c.execute("""SELECT MAX(submit_index) FROM job_submit WHERE job_id = %s""",(job_id,))
-        res = c.fetchone()
-        if res == None:
-            self.conn.commit()
-            return None
-        (max_index,) = res
-
-        c.execute("""SELECT id FROM job_submit WHERE job_id = %s AND submit_index = %s""",(job_id,max_index))
-        res = c.fetchone()
-        self.conn.commit()
-        (job_sub_id,) = res
-
-        return job_sub_id
 
     def get_job_submit_info(self,job_sub_id):
     

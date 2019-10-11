@@ -99,27 +99,31 @@ class PadmeProdServer:
     
         # Main production loop
         undef_counter = 0
+        jobs_success_old = 0
+        jobs_fail_old = 0
         while True:
     
             # Renew proxy if needed
             self.ph.renew_voms_proxy(proxy_file)
     
             # Check quit control file and send quit command to all jobs if found.
-            if os.path.exists(quit_file):
-                for job in job_list: job.prod_quit = True
-                # When in quit mode, speed up final checks
-                self.prod_check_delay = 60
-                self.prod_check_delay_spread = 0
+            if os.path.exists(quit_file): self.quit_production()
 
             # Call method to check jobs status and handle each job accordingly
-            (jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef) = self.handle_jobs(prod_ce,job_id_list)
-    
-            # Show current production state
-            print "Jobs: submitted %d idle %d running %d held %d success %d fail %d cancel %d undef %d"%(jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
+            (jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
 
-            # If all jobs are in a final state, production is over
-            if jobs_submit+jobs_idle+jobs_active+jobs_held+jobs_undef == 0:
-                print "--- No unfinished jobs left: exiting ---"
+            # Update database if any new job reached final state
+            if ( (job_success != jobs_success_old) or (jobs_fail != jobs_fail_old) ):
+                self.db.set_prod_job_numbers(jobs_success,jobs_fail)
+                jobs_success_old = job_success
+                jobs_fail_old = jobs_fail
+
+            # Show current production state
+            print "Jobs: active %d success %d fail %d undef %d"%(jobs_active,jobs_success,jobs_fail,jobs_undef)
+
+            # If all jobs are in a final state (either success or fail), production is over
+            if jobs_active+jobs_undef == 0:
+                print "--- No unfinished jobs left: production is done ---"
                 break
 
             # Handle UNDEF condition in a relaxed way as it might be a temporary glitch of the CE
@@ -130,8 +134,8 @@ class PadmeProdServer:
                 if undef_counter < 10:
                     print "WARNING: %d jobs in UNDEF state for %d iteration(s)"%(jobs_undef,undef_counter)
                 else:
-                    print "*** More than 10 consecutive iterations with jobs in UNDEF state: exiting ***"
-                    break
+                    print "*** More than 10 consecutive iterations with jobs in UNDEF state: quitting production ***"
+                    self.quit_production()
 
             # Release DB connection while idle
             self.db.close_db()
@@ -141,8 +145,8 @@ class PadmeProdServer:
     
         # Production is over: get total events, tag production as done and say bye bye
         n_events = self.db.get_prod_total_events(prod_id)
-        print "- Jobs submitted: %d - Jobs successful: %d - Total events: %d"%(prod_njobs,jobs_success,n_events)
-        self.db.close_prod(prod_id,jobs_success,n_events)
+        print "- Jobs submitted: %d - Jobs successful: %d - Jobs failed: %d - Total events: %d"%(prod_njobs,jobs_success,jobs_fail,n_events)
+        self.db.close_prod(prod_id,jobs_success,jobs_fail,n_events)
     
         # Release DB connection before exiting
         self.db.close_db()
@@ -150,15 +154,11 @@ class PadmeProdServer:
         print "=== Ending Production %s ==="%self.prod_name
         sys.exit(0)
     
-    def handle_jobs(self,prod_ce,job_id_list):
+    def handle_jobs(self):
     
-        jobs_submit = 0
-        jobs_idle = 0
         jobs_active = 0
-        jobs_held = 0
         jobs_success = 0
         jobs_fail = 0
-        jobs_cancel = 0
         jobs_undef = 0
 
         # Reset proxy delegations array
@@ -169,16 +169,21 @@ class PadmeProdServer:
         for job in self.job_list:
 
             status = job.update()
-            if   status == "SUBMITTED": jobs_submit  += 1
-            elif status == "IDLE":      jobs_idle    += 1
-            elif status == "CANCELLED": jobs_cancel  += 1
-            elif status == "FAILED":    jobs_fail    += 1
-            elif status == "SUCCESS":   jobs_success += 1
-            elif status == "ACTIVE":    jobs_active  += 1
-            elif status == "HELD":      jobs_held    += 1
-            elif status == "UNDEF":     jobs_undef   += 1
+            if   status == "ACTIVE":     jobs_active  += 1
+            elif status == "SUCCESSFUL": jobs_success += 1
+            elif status == "FAILED":     jobs_fail    += 1
+            elif status == "UNDEF":      jobs_undef += 1
             else:
                 print "  WARNING ProdJob returned unknown status '%s'"%status
                 jobs_undef += 1
 
-        return (jobs_submit,jobs_idle,jobs_active,jobs_held,jobs_success,jobs_fail,jobs_cancel,jobs_undef)
+        return (jobs_active,jobs_success,jobs_fail,jobs_undef)
+
+    def quit_production(self):
+
+        # Tell all jobs to quit as fast as possible
+        for job in job_list: job.prod_quit = True
+
+        # When in quit mode, speed up final checks
+        self.prod_check_delay = 60
+        self.prod_check_delay_spread = 0

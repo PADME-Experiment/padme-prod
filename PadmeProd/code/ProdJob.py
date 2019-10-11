@@ -73,7 +73,6 @@ class ProdJob:
         # 1: Active
         # 2: Successful
         # 3: Failed
-        # 4: Cancelled
 
         # Submitted Job Status
         #   0: UNSUBMITTED
@@ -99,7 +98,7 @@ class ProdJob:
             if self.prod_quit:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_CANCELLED")
                 self.db.close_job(self.job_id,4)
-                return "CANCELLED"
+                return "FAILED"
             if self.submit_job():
                 print "- %-8s %-60s %s"%(self.job_name,self.ce_job_id,"SUBMITTED")
                 self.db.set_job_status(self.job_id,1)
@@ -146,7 +145,7 @@ class ProdJob:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"CANCELLED - Output Problem",description)
             else:
                 print "- %-8s %-60s CANCELLED with status %d (?) %s"%(self.job_name,self.ce_job_id,job_sub_status,description)
-            return "CANCELLED"
+            return "FAILED"
 
         # Status is 1: Job is being processed
         if self.job_status == 1:
@@ -218,22 +217,15 @@ class ProdJob:
                 # If we get here, the job finished with some problem: see if we can resubmit it
 
                 if self.prod_quit:
+                    # Production was cancelled: tag job as failed
                     print "  WARNING - production in quit mode: job %s will not be resubmitted"%self.job_name
-                    if job_ce_status == "CANCELLED":
-                        self.db.close_job(self.job_id,4)
-                        return "CANCELLED"
-                    else:
-                        self.db.close_job(self.job_id,3)
-                        return "FAILED"
+                    self.db.close_job(self.job_id,3)
+                    return "FAILED"
                 elif self.resubmissions >= self.resubmit_max:
                     # Job was resubmitted too many times, tag it as failed
                     print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,resubmit)
-                    if job_ce_status == "CANCELLED":
-                        self.db.close_job(self.job_id,4)
-                        return "CANCELLED"
-                    else:
-                        self.db.close_job(self.job_id,3)
-                        return "FAILED"
+                    self.db.close_job(self.job_id,3)
+                    return "FAILED"
                 else:
                     # Resubmit the job
                     self.resubmissions += 1
