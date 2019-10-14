@@ -73,7 +73,7 @@ class PadmeMCDB:
 
         return prod_id
 
-    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
+    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
         prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
 

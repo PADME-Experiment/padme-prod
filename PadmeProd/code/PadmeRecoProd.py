@@ -14,7 +14,6 @@ import daemon.pidfile
 from PadmeProdServer import PadmeProdServer
 from PadmeMCDB import PadmeMCDB
 from ProxyHandler import ProxyHandler
-#from Logger import Logger
 
 # Get location of padme-prod software from PADME_PROD env variable
 # Default to ./padme-prod if not set
@@ -27,7 +26,7 @@ DB = PadmeMCDB()
 PH = ProxyHandler()
 
 # ### Define PADME grid resources ###
-        
+
 # SRMs to access PADME area on the LNF and CNAF storage systems
 PADME_SRM_URI = {
     "LNF":  "srm://atlasse.lnf.infn.it:8446/srm/managerv2?SFN=/dpm/lnf.infn.it/home/vo.padme.org",
@@ -38,7 +37,7 @@ PADME_ROOT_URI = {
     "LNF": "root://atlasse.lnf.infn.it:1094//vo.padme.org",
 }
 
-# List of available submission sites and corresponding CE nodes
+# List of available submission sites and corresponding default CE nodes
 PADME_CE_NODE = {
     "LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
     "CNAF":  "ce04-lcg.cr.cnaf.infn.it:8443/cream-lsf-padme",
@@ -49,6 +48,7 @@ PADME_CE_NODE = {
 PROD_RUN_NAME = ""
 PROD_NAME = ""
 PROD_FILES_PER_JOB = 100
+PROD_FILES_PER_JOB_MAX = 1000
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
 PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_PROD
@@ -77,7 +77,7 @@ def print_help():
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
     print "  -d <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
     print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
-    print "  -D <description>\tProduction description to be stored in the DB. Default: '%s'"%PROD_DESCRIPTION
+    print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
 
 def run_command(command):
@@ -210,8 +210,8 @@ def main(argv):
             print_help()
             sys.exit(2)
 
-    if PROD_FILES_PER_JOB < 0 or PROD_FILES_PER_JOB > 1000:
-        print "*** ERROR *** Invalid number of files per job requested:",PROD_FILES_PER_JOB,"- Max allowed: 1000."
+    if PROD_FILES_PER_JOB < 0 or PROD_FILES_PER_JOB > PROD_FILES_PER_JOB_MAX:
+        print "*** ERROR *** Invalid number of files per job requested: %d - Max allowed: %d."%(PROD_FILES_PER_JOB,PROD_FILES_PER_JOB_MAX)
         print_help()
         sys.exit(2)
 
@@ -244,12 +244,13 @@ def main(argv):
         print "*** ERROR *** Path %s already exists"%PROD_DIR
         sys.exit(2)
 
+    # Check if production already exists in DB
     if (DB.is_prod_in_db(PROD_NAME)):
         print "*** ERROR *** A production named '%s' already exists in DB"%PROD_NAME
         sys.exit(2)
 
     # Create production directory to host support dirs for all jobs
-    print "- Creating production dir",PROD_DIR
+    print "- Creating production dir %s"%PROD_DIR
     os.mkdir(PROD_DIR)
 
     # Check if long-lived (30 days) proxy was defined. Create it if not
@@ -276,7 +277,7 @@ def main(argv):
         print "- Creating long-lived proxy file %s"%JOB_PROXY_FILE
         proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%JOB_PROXY_FILE
         if PROD_DEBUG: print "> %s"%proxy_cmd
-        if subprocess.call(proxy_cmd.split()):
+        if subprocess.call(shlex.split(proxy_cmd)):
             print "*** ERROR *** while generating long-lived proxy file %s"%JOB_PROXY_FILE
             shutil.rmtree(PROD_DIR)
             sys.exit(2)
@@ -303,10 +304,10 @@ def main(argv):
     prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,len(job_file_lists))
 
     # Create production directory in the storage SRM
-    print "- Creating dir",PROD_STORAGE_DIR,"in",PROD_SRM
+    print "- Creating dir %s in %s"%(PROD_STORAGE_DIR,PROD_SRM)
     gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
     if PROD_DEBUG: print ">",gfal_mkdir_cmd
-    rc = subprocess.call(gfal_mkdir_cmd.split())
+    rc = subprocess.call(shlex.split(gfal_mkdir_cmd))
 
     # Create job structures
     print "- Creating directory structure for production jobs"
@@ -329,9 +330,6 @@ def main(argv):
         except:
             print "*** ERROR *** Unable to copy job script file %s to %s"%(PROD_SCRIPT,jobScript)
             sys.exit(2)
-
-        # Configuration file is empty for Reco
-        jobCfg = ""
 
         # Create list with files to process
         jobListFile = "%s/job.list"%jobDir
@@ -367,11 +365,12 @@ def main(argv):
             jf.write("]\n")
 
         # Create job entry in DB and register job
+        jobCfg = ""
         with open(jobListFile,"r") as jlf: jobList = jlf.read()
         DB.create_job(prodId,jobName,jobDir,jobCfg,jobList)
 
-        # From now on we do not need the DB anymore: close connection
-        DB.close_db()
+    # From now on we do not need the DB anymore: close connection
+    DB.close_db()
 
     # Prepare daemon context
 
@@ -397,7 +396,6 @@ def main(argv):
     context.open()
     PadmeProdServer(PROD_NAME,PROD_DEBUG)
     context.close()
-    #PadmeProdServer(PROD_NAME)
 
 # Execution starts here
 if __name__ == "__main__": main(sys.argv[1:])
