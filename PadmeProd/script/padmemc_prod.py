@@ -7,6 +7,9 @@ import time
 import subprocess
 import shutil
 
+PROXY_FILE = ""
+PROXY_RENEW_TIME = 6*3600
+
 def now_str():
 
     return time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
@@ -17,12 +20,28 @@ def get_adler32(outfile):
     p = subprocess.Popen(adler_cmd.split(),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     return p.communicate()[0].strip()
 
+def renew_proxy_handler(signum,frame):
+
+    global PROXY_FILE
+    global PROXY_RENEW_TIME
+
+    # Obtain new VOMS proxy from long-lived proxy
+    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(PROXY_FILE,PROXY_FILE)
+    print ">",proxy_cmd
+    rc = subprocess.call(proxy_cmd.split())
+
+    # Reset alarm
+    signal.alarm(PROXY_RENEW_TIME)
+
 def main(argv):
+
+    global PROXY_FILE
+    global PROXY_RENEW_TIME
 
     # Top CVMFS directory for PadmeMC
     padmemc_cvmfs_dir = "/cvmfs/padme.infn.it/PadmeMC"
 
-    (cfg_file,proxy_file,prod_name,job_name,mc_version,storage_dir,srm_uri) = argv
+    (macro_file,PROXY_FILE,prod_name,job_name,mc_version,storage_dir,srm_uri) = argv
 
     job_dir = os.getcwd()
 
@@ -33,33 +52,36 @@ def main(argv):
     print "PadmeMC version",mc_version
     print "SRM server URI",srm_uri
     print "Storage directory",storage_dir
-    print "MC macro file",cfg_file
+    print "MC macro file",macro_file
     print "Proxy file",proxy_file
 
     # Change permission rights for long-lived proxy (must be 600)
-    os.chmod(proxy_file,0600)
+    os.chmod(PROXY_FILE,0600)
 
-    # Check if software directory for this version is available
+    # Check if software directory for this version is available on CVMFS (try a few times before giving up)
     padmemc_version_dir = "%s/%s"%(padmemc_cvmfs_dir,mc_version)
-    if not os.path.isdir(padmemc_version_dir):
-        print "ERROR Directory %s not found"%padmemc_version_dir
-        exit(2)
+    n_try = 0
+    while not os.path.isdir(padmemc_version_dir):
+        n_try += 1
+        if n_try >= 5:
+            print "ERROR Directory %s not found"%padmemc_version_dir
+            exit(2)
+        print "WARNING Directory %s not found (%d) - Pause and try again"%(padmemc_version_dir,n_try)
+        time.sleep(5)
 
-    # Check if padmemc configuration file is available
+    # Check if PadmeMC configuration file is available
     padmemc_init_file = "%s/config/padme-configure.sh"%padmemc_version_dir
     if not os.path.exists(padmemc_init_file):
         print "ERROR File %s not found"%padmemc_init_file
         exit(2)
 
-    # Check if PADMEMC executable is available
-    padmemc_exe_file = "%s/PADMEMC"%padmemc_version_dir
-    if not os.path.exists(padmemc_exe_file):
-        print "ERROR File %s not found"%padmemc_exe_file
-        exit(2)
-
     # Create local link to GDML files needed for geometry definition
     padmemc_gdml_dir = "%s/gdml"%padmemc_version_dir
     os.symlink(padmemc_gdml_dir,"gdml")
+
+    # Enable timer to renew VOMS proxy every 6h
+    signal.signal(signal.SIGALRM,renew_proxy_handler)
+    signal.alarm(PROXY_RENEW_TIME)
 
     # Prepare shell script to run PadmeMC
     sf = open("job.sh","w")
@@ -67,27 +89,23 @@ def main(argv):
     sf.write("echo \"--- Starting PADMEMC production ---\"\n")
     sf.write(". %s\n"%padmemc_init_file)
     sf.write("echo \"PADME = $PADME\"\n")
+    sf.write("echo \"PADMEMC_EXE = $PADMEMC_EXE\"\n")
     sf.write("echo \"LD_LIBRARY_PATH = $LD_LIBRARY_PATH\"\n")
-    sf.write("%s job.mac\n"%padmemc_exe_file)
+    sf.write("$PADMEMC_EXE %s\n"%macro_file)
     sf.write("pwd; ls -l\n")
     sf.close()
 
     # Run job script sending its output/error to stdout/stderr
     print "Program starting at %s (UTC)"%now_str()
     job_cmd = "/bin/bash job.sh"
-    rc = subprocess.call(job_cmd.split())
+    rc_mc = subprocess.call(job_cmd.split())
     print "Program ending at %s (UTC)"%now_str()
 
-    print "PADMEMC program ended with return code %s"%rc
+    print "PADMEMC program ended with return code %s"%rc_mc
 
-    if rc == 0:
+    if rc_mc == 0:
 
         print "--- Saving output files ---"
-
-        # Obtain new VOMS proxy from long-lived proxy
-        proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org"%(proxy_file,proxy_file)
-        print ">",proxy_cmd
-        rc = subprocess.call(proxy_cmd.split())
 
         if os.path.exists("data.root"):
 
