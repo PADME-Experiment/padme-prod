@@ -119,7 +119,7 @@ class ProdJob:
 
         # Status 3: Job failed. Show how it failed
         if self.job_status == 3:
-            if not job_sub_id:
+            if not self.job_sub_id:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_FAILED")
             elif job_sub_status == 8:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"DONE_FAILED",description)
@@ -137,7 +137,7 @@ class ProdJob:
 
         # Status 4: Job cancelled. Show some details
         if self.job_status == 4:
-            if not job_sub_id:
+            if not self.job_sub_id:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_CANCELLED")
             elif job_sub_status == 9:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"CANCELLED",description)
@@ -386,7 +386,7 @@ class ProdJob:
             return False
 
         # Rename output dir with submission name
-        sub_dir = "submit_%s"%self.db.get_job_submit_index(job_sub_id)
+        sub_dir = "submit_%s"%self.db.get_job_submit_index(self.job_sub_id)
         os.rename(out_dir,sub_dir)
 
         # Check if all expected output files are there
@@ -503,31 +503,31 @@ class ProdJob:
 
         if worker_node:
             print "  Job run on worker node %s"%worker_node
-            self.db.set_job_worker_node(self.job_id,worker_node)
+            self.db.set_job_worker_node(self.job_sub_id,worker_node)
 
         if wn_user:
             print "  Job run as user %s"%wn_user
-            self.db.set_job_wn_user(self.job_id,wn_user)
+            self.db.set_job_wn_user(self.job_sub_id,wn_user)
 
         if wn_dir:
             print "  Job run in directory %s"%wn_dir
-            self.db.set_job_wn_dir(self.job_id,wn_dir)
+            self.db.set_job_wn_dir(self.job_sub_id,wn_dir)
 
         if time_start:
             print "  Job started at %s (UTC)"%time_start
-            self.db.set_job_time_start(self.job_id,time_start)
+            self.db.set_job_time_start(self.job_sub_id,time_start)
 
         if time_end:
             print "  Job ended at %s (UTC)"%time_end
-            self.db.set_job_time_end(self.job_id,time_end)
+            self.db.set_job_time_end(self.job_sub_id,time_end)
 
         if prog_start:
             print "  Program started at %s (UTC)"%prog_start
-            self.db.set_run_time_start(self.job_id,prog_start)
+            self.db.set_run_time_start(self.job_sub_id,prog_start)
 
         if prog_end:
             print "  Program ended at %s (UTC)"%prog_end
-            self.db.set_run_time_end(self.job_id,prog_end)
+            self.db.set_run_time_end(self.job_sub_id,prog_end)
 
         if reco_processed_events:
             print "  Job processed %s events"%reco_processed_events
