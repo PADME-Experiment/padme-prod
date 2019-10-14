@@ -225,6 +225,8 @@ class PadmeMCDB:
         status = 0
 
         # Create new job submission
+        self.check_db()
+        c = self.conn.cursor()
         c.execute("""INSERT INTO job_submit (job_id,submit_index,status,time_submit) VALUES (%s,%s,%s,%s)""",(job_id,job_sub_index,status,self.__now__()))
         job_sub_id = c.lastrowid
         self.conn.commit()

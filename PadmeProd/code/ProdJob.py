@@ -377,7 +377,7 @@ class ProdJob:
             time.sleep(self.retries_delay)
 
         # Get name of dir where output files are stored from the ce_job_id
-        out_dir = ce_job_id[8:].replace(":","_").replace("/","_")
+        out_dir = self.ce_job_id[8:].replace(":","_").replace("/","_")
 
         # Check if job output dir exists
         if not os.path.isdir(out_dir):

@@ -113,7 +113,7 @@ class PadmeProdServer:
             (jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
 
             # Update database if any new job reached final state
-            if ( (job_success != jobs_success_old) or (jobs_fail != jobs_fail_old) ):
+            if ( (jobs_success != jobs_success_old) or (jobs_fail != jobs_fail_old) ):
                 self.db.set_prod_job_numbers(jobs_success,jobs_fail)
                 jobs_success_old = job_success
                 jobs_fail_old = jobs_fail
