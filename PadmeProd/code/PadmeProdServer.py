@@ -27,6 +27,10 @@ class PadmeProdServer:
 
         self.prod_name = prod_name
 
+        self.prod_id = None
+
+        self.job_list = []
+
         # Delay between two checks. Interval is flat between 3m and 5m
         self.prod_check_delay = 180
         self.prod_check_delay_spread = 120
@@ -46,10 +50,10 @@ class PadmeProdServer:
         if not self.db.is_prod_in_db(self.prod_name):
             print "*** ERROR *** Production '%s' not found in DB"%self.prod_name
             sys.exit(1)
-        prod_id = self.db.get_prod_id(self.prod_name)
+        self.prod_id = self.db.get_prod_id(self.prod_name)
     
         # Get some info about this prod
-        (dummy,prod_ce,prod_dir,proxy_file,prod_njobs) = self.db.get_prod_info(prod_id)
+        (dummy,prod_ce,prod_dir,proxy_file,prod_njobs) = self.db.get_prod_info(self.prod_id)
 
         # Check if production dir exists
         if not os.path.isdir(prod_dir):
@@ -85,13 +89,12 @@ class PadmeProdServer:
         quit_file = "%s/quit"%prod_dir
 
         # Get list of job ids for this production
-        job_id_list = self.db.get_job_list(prod_id)
+        job_id_list = self.db.get_job_list(self.prod_id)
         if len(job_id_list) != prod_njobs:
             print "*** ERROR *** Number of jobs in DB and in production are different: %s != %s"%(len(job_id_list),prod_njobs)
             sys.exit(1)
 
         # Create and configure job handlers
-        self.job_list = []
         for job_id in job_id_list:
             self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
     
@@ -114,7 +117,7 @@ class PadmeProdServer:
 
             # Update database if any new job reached final state
             if ( (jobs_success != jobs_success_old) or (jobs_fail != jobs_fail_old) ):
-                self.db.set_prod_job_numbers(jobs_success,jobs_fail)
+                self.db.set_prod_job_numbers(self.prod_id,jobs_success,jobs_fail)
                 jobs_success_old = job_success
                 jobs_fail_old = jobs_fail
 
@@ -144,9 +147,9 @@ class PadmeProdServer:
             time.sleep(self.prod_check_delay+random.randint(0,self.prod_check_delay_spread+1))
     
         # Production is over: get total events, tag production as done and say bye bye
-        n_events = self.db.get_prod_total_events(prod_id)
+        n_events = self.db.get_prod_total_events(self.prod_id)
         print "- Jobs submitted: %d - Jobs successful: %d - Jobs failed: %d - Total events: %d"%(prod_njobs,jobs_success,jobs_fail,n_events)
-        self.db.close_prod(prod_id,jobs_success,jobs_fail,n_events)
+        self.db.close_prod(self.prod_id,jobs_success,jobs_fail,n_events)
     
         # Release DB connection before exiting
         self.db.close_db()
@@ -182,7 +185,7 @@ class PadmeProdServer:
     def quit_production(self):
 
         # Tell all jobs to quit as fast as possible
-        for job in job_list: job.prod_quit = True
+        for job in self.job_list: job.prod_quit = True
 
         # When in quit mode, speed up final checks
         self.prod_check_delay = 60

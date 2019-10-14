@@ -52,7 +52,7 @@ PROD_CE_NODE = ""
 PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
 PROD_RUN_SITE = "LNF"
-PROD_STORAGE_SITE = "LNF"
+PROD_STORAGE_SITE = "CNAF"
 PROD_MC_VERSION = "develop"
 PROD_PROXY_FILE = ""
 PROD_DEBUG = 0
@@ -63,20 +63,20 @@ PROD_NEVENTS_REQ = 0
 def print_help():
 
     print "PadmeMCProd -n <prod_name> -j <number_of_jobs> [-v <padmemc_version>] [-c <config_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-D <description>] [-U <user>] [-N <events>] [-h]"
-    print "  -n <prod_name>\t\tname for the production"
-    print "  -j <number_of_jobs>\tnumber of production jobs to submit. Must be >0 and <=1000"
-    print "  -v <version>\tversion of PadmeMC to use for production. Must be installed on CVMFS. Default: %s"%PROD_MC_VERSION
-    print "  -c <config_file>\t\tname of configuration file to use. Default: cfg/<prod_name>.cfg"
-    print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
+    print "  -n <prod_name>\tName for the production"
+    print "  -j <number_of_jobs>\tNumber of production jobs to submit. Must be >0 and <=1000"
+    print "  -v <version>\t\tVersion of PadmeMC to use for production. Must be installed on CVMFS. Default: %s"%PROD_MC_VERSION
+    print "  -c <config_file>\tConfiguration file to use. Default: cfg/<prod_name>.cfg"
+    print "  -s <submission_site>\tSite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
-    print "  -d <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
+    print "  -d <storage_site>\tSite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
     print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
     print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
-    print "  -U <user>\tName of user who requested the production (to be stored in the DB). '%s' if not given."%PROD_USER_REQ
-    print "  -N <events>\tTotal number of events requested by user (to be stored in the DB). %d if not given."%PROD_NEVENTS_REQ
-    print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
+    print "  -U <user>\t\tName of user who requested the production (to be stored in the DB). '%s' if not given."%PROD_USER_REQ
+    print "  -N <events>\t\tTotal number of events requested by user (to be stored in the DB). %d if not given."%PROD_NEVENTS_REQ
+    print "  -V\t\t\tEnable debug mode. Can be repeated to increase verbosity"
 
 def main(argv):
 
@@ -188,14 +188,19 @@ def main(argv):
         print_help()
         sys.exit(2)
 
-    if PROD_CONFIG_FILE == "":
-        PROD_CONFIG_FILE = "cfg/%s.cfg"%PROD_NAME
+    # If configuration file was not specified, use default
+    if PROD_CONFIG_FILE == "": PROD_CONFIG_FILE = "cfg/%s.mac"%PROD_NAME
 
-    if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = "/mc/%s"%PROD_NAME
+    # Check if configuration file exists
+    if not os.path.isfile(PROD_CONFIG_FILE):
+        print "*** ERROR *** Configuration file '%s' does not exist"%PROD_CONFIG_FILE
+        sys.exit(2)
 
-    if PROD_DIR == "":
-        PROD_DIR = "prod/%s"%PROD_NAME
+    # If storage directory was not specified, use default
+    if PROD_STORAGE_DIR == "": PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_STORAGE_DIR,PROD_NAME)
+
+    # If production directory was not specified, use default
+    if PROD_DIR == "": PROD_DIR = "prod/%s"%PROD_NAME
 
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
@@ -210,11 +215,6 @@ def main(argv):
     if PROD_DEBUG:
         print "- Debug level: %d"%PROD_DEBUG
         PH.debug = PROD_DEBUG
-
-    # Check if configuration file exists
-    if not os.path.isfile(PROD_CONFIG_FILE):
-        print "*** ERROR *** Configuration file '%s' does not exist"%PROD_CONFIG_FILE
-        sys.exit(2)
 
     # Check if production dir already exists
     if os.path.exists(PROD_DIR):

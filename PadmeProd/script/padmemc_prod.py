@@ -53,7 +53,7 @@ def main(argv):
     print "SRM server URI",srm_uri
     print "Storage directory",storage_dir
     print "MC macro file",macro_file
-    print "Proxy file",proxy_file
+    print "Proxy file",PROXY_FILE
 
     # Change permission rights for long-lived proxy (must be 600)
     os.chmod(PROXY_FILE,0600)

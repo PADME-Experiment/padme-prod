@@ -216,6 +216,7 @@ class ProdJob:
 
                 # If we get here, the job finished with some problem: see if we can resubmit it
 
+                self.resubmissions += 1
                 if self.prod_quit:
                     # Production was cancelled: tag job as failed
                     print "  WARNING - production in quit mode: job %s will not be resubmitted"%self.job_name
@@ -228,7 +229,6 @@ class ProdJob:
                     return "FAILED"
                 else:
                     # Resubmit the job
-                    self.resubmissions += 1
                     if self.submit_job():
                         print "- %s %s RESUBMITTED"%(self.job_name,self.ce_job_id)
                         return "ACTIVE"
