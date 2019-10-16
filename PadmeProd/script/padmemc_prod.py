@@ -3,6 +3,7 @@
 import os
 import sys
 import getopt
+import signal
 import time
 import subprocess
 import shutil

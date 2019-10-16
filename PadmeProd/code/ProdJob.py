@@ -445,6 +445,8 @@ class ProdJob:
         reco_avg_evtproc_cpu_time = ""
         reco_avg_evtproc_run_time = ""
 
+        mc_processed_events = ""
+
         jof = open(out_file,"r")
         for line in jof:
 
@@ -490,6 +492,12 @@ class ProdJob:
                 r = re.match("^.*Average Event Processing Run time\s+(\S+)\s+s*$",line)
                 if r: reco_avg_evtproc_run_time = r.group(1)
 
+            # Extract PadmeMC final summary information
+            if re.match("^PadmeMCInfo - .*$",line):
+
+                r = re.match("^.*Total Events\s+(\d+)\s*$",line)
+                if r: mc_processed_events = r.group(1)
+
             # Extract info about produced output file(s)
             r = re.match("^(.*) file (.*) with size (.*) and adler32 (.*) copied.*$",line)
             if r:
@@ -532,6 +540,10 @@ class ProdJob:
         if reco_processed_events:
             print "  Job processed %s events"%reco_processed_events
             self.db.set_job_n_events(self.job_id,reco_processed_events)
+
+        if mc_processed_events:
+            print "  Job produced %s events"%mc_processed_events
+            self.db.set_job_n_events(self.job_id,mc_processed_events)
 
         if file_list:
             self.db.set_job_n_files(self.job_id,str(len(file_list)))

@@ -38,6 +38,7 @@ SELECT
                 WHEN 207 THEN '207 Done-OK - RC!=0'
                          ELSE '??? Unknown'
   END                                AS 'sub status',
+  s.exit_code                        AS 'exit code',
   s.ce_job_id                        AS 'ce job id',
   s.description                      AS 'description',
   s.worker_node                      AS 'worker node',
