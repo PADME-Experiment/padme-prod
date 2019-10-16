@@ -395,7 +395,7 @@ class ProdJob:
         err_file = "%s/job.err"%sub_dir
         if os.path.exists(err_file):
             self.parse_err_file(err_file)
-       else:
+        else:
             output_ok = False
             print "  WARNING File %s not found"%err_file
     
