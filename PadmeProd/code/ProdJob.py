@@ -218,7 +218,7 @@ class ProdJob:
                     if self.prod_quit:
                         print "  WARNING - production in quit mode: job %s will not be resubmitted"%self.job_name
                     if self.resubmissions >= self.resubmit_max:
-                        print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,resubmit)
+                        print "  WARNING - job %s failed %d times and will not be resubmitted"%(self.job_name,self.resubmissions)
                     self.job_status = 3
                     self.db.close_job(self.job_id,self.job_status)
                     return "FAILED"
