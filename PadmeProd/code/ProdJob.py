@@ -344,21 +344,9 @@ class ProdJob:
         # Go to job working directory (do not forget to go back to main_dir before returning!)
         os.chdir(self.job_dir)
     
-        # Recover output files from job
-        if self.debug: print "  Recovering job output from CE"
-        getout_cmd = "glite-ce-job-output --noint %s"%self.ce_job_id
-   
         # Handle output files retrieval. Trap errors and allow for multiple retries
         retries = 0
-        while True:
-
-            (rc,out,err) = self.execute_command(getout_cmd)
-            if rc == 0: break
-
-            print "  WARNING glite-ce-job-output returned error code %d"%rc
-            if self.debug:
-                print "- STDOUT -\n%s"%out
-                print "- STDERR -\n%s"%err
+        while not self.retrieve_job_output():
 
             # Abort if too many attempts failed
             retries += 1
@@ -381,19 +369,28 @@ class ProdJob:
 
         # Rename output dir with submission name
         sub_dir = "submit_%s"%self.db.get_job_submit_index(self.job_sub_id)
-        os.rename(out_dir,sub_dir)
-
-        # Check if all expected output files are there
+        try:
+            os.rename(out_dir,sub_dir)
+        except:
+            print "  WARNING Unable to rename directory %s to %s"%(out_dir,sub_dir)
+            os.chdir(main_dir)
+            return False
 
         output_ok = True
 
+        # Check if all output files are there and parse job output and error files.
+
         out_file = "%s/job.out"%sub_dir
-        if not os.path.exists(out_file):
+        if os.path.exists(out_file):
+            self.parse_out_file(out_file)
+        else:
             output_ok = False
             print "  WARNING File %s not found"%out_file
-    
+
         err_file = "%s/job.err"%sub_dir
-        if not os.path.exists(err_file):
+        if os.path.exists(err_file):
+            self.parse_err_file(err_file)
+       else:
             output_ok = False
             print "  WARNING File %s not found"%err_file
     
@@ -402,23 +399,59 @@ class ProdJob:
             output_ok = False
             print "  WARNING File %s not found"%sh_file
 
-        # There was a problem retrieving output files: return an error
-        if not output_ok:
+        # Purge job only if all expected files were found
+        if output_ok:
+            self.purge_job()
+        else:
             print "  WARNING Problems while retrieving job output files: job will not be purged from CE"
-            os.chdir(main_dir)
-            return False
 
-        # Output was correctly retrieved: job can be purged
-        if self.debug: print "  Purging job from CE"
-        purge_job_cmd = "glite-ce-job-purge -N %s"%self.ce_job_id
-        (rc,out,err) = self.execute_command(purge_job_cmd)
+        # Go back to top directory
+        os.chdir(main_dir)
+    
+        return output_ok
+
+    def retrieve_job_output(self):
+
+        if self.debug: print "  Retrieveing output for job %s from CE %s"%(self.ce_job_id,self.ce)
+        output_job_cmd = "glite-ce-job-output --noint %s"%self.ce_job_id
+        (rc,out,err) = self.execute_command(output_job_cmd)
         if rc:
-            print "  WARNING glite-ce-job-purge returned error code %d"%rc
+            print "  WARNING Retrieve output command for job %s returned error code %d"%(self.ce_job_id,rc)
             if self.debug:
                 print "- STDOUT -\n%s"%out
                 print "- STDERR -\n%s"%err
+            return False
+        return True
 
-        # Scan log file looking for some information
+    def purge_job(self):
+
+        if self.debug: print "  Purging job %s from CE %s"%(self.ce_job_id,self.ce)
+        purge_job_cmd = "glite-ce-job-purge --noint %s"%self.ce_job_id
+        (rc,out,err) = self.execute_command(purge_job_cmd)
+        if rc:
+            print "  WARNING Job %s purge command returned error code %d"%(self.ce_job_id,rc)
+            if self.debug:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
+            return False
+        return True
+
+    def cancel_job(self):
+
+        if self.debug: print "  Cancelling job %s from CE %s"%(self.ce_job_id,self.ce)
+        cancel_job_cmd = "glite-ce-job-cancel --noint %s"%self.ce_job_id
+        (rc,out,err) = self.execute_command(cancel_job_cmd)
+        if rc != 0:
+            print "  WARNING Job %s cancel command returned error code %d"%(self.ce_job_id,rc)
+            if self.debug:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
+            return False
+        return True
+
+    def parse_out_file(self,out_file):
+
+        # Parse log file and write information to DB
 
         worker_node = ""
         wn_user = ""
@@ -545,18 +578,6 @@ class ProdJob:
                 print "\t%s file %s with size %s adler32 %s"%(file_type,file_name,file_size,file_adler32)
                 self.db.create_job_file(self.job_id,file_name,file_type,0,0,file_size,file_adler32)
 
-        # Go back to top directory
-        os.chdir(main_dir)
-    
-        # Need to define some error handling procedure
-        return True
-
-    def cancel_job(self):
-
-        cmd = "glite-ce-job-cancel --noint %s"%self.ce_job_id
-        (rc,out,err) = self.execute_command(cmd)
-        if rc != 0:
-            print "  WARNING Job %s cancel command returned error code %d"%(self.ce_job_id,rc)
-            if self.debug:
-                print "- STDOUT -\n%s"%out
-                print "- STDERR -\n%s"%err
+    def parse_err_file(self,err_file):
+        # Will add some activity when standard error patterns will be defined
+        pass
