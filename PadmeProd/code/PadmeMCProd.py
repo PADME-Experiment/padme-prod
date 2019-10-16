@@ -197,7 +197,7 @@ def main(argv):
         sys.exit(2)
 
     # If storage directory was not specified, use default
-    if PROD_STORAGE_DIR == "": PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_STORAGE_DIR,PROD_NAME)
+    if PROD_STORAGE_DIR == "": PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_MC_VERSION,PROD_NAME)
 
     # If production directory was not specified, use default
     if PROD_DIR == "": PROD_DIR = "prod/%s"%PROD_NAME

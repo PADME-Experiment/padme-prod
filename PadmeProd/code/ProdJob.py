@@ -97,16 +97,18 @@ class ProdJob:
         if self.job_status == 0:
             if self.prod_quit:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_CANCELLED")
-                self.db.close_job(self.job_id,4)
+                self.job_status = 3
+                self.db.close_job(self.job_id,self.job_status)
                 return "FAILED"
             if self.submit_job():
                 print "- %-8s %-60s %s"%(self.job_name,self.ce_job_id,"SUBMITTED")
-                self.db.set_job_status(self.job_id,1)
                 self.job_status = 1
+                self.db.set_job_status(self.job_id,self.job_status)
                 return "ACTIVE"
             else:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_FAILED")
-                self.db.close_job(self.job_id,3)
+                self.job_status = 3
+                self.db.close_job(self.job_id,self.job_status)
                 return "FAILED"
 
         # Get current status of job submission
@@ -123,28 +125,20 @@ class ProdJob:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_FAILED")
             elif job_sub_status == 8:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"DONE_FAILED",description)
+            elif job_sub_status == 9:
+                print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"CANCELLED",description)
             elif job_sub_status == 10:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"ABORTED",description)
             elif job_sub_status == 107:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"DONE_OK - Output Problem",description)
             elif job_sub_status == 108:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"DONE-FAILED - Output Problem",description)
+            elif job_sub_status == 109:
+                print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"CANCELLED - Output Problem",description)
             elif job_sub_status == 207:
                 print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"DONE_OK - RC != 0",description)
             else:
                 print "- %-8s %-60s FAILED with status %d (?) %s"%(self.job_name,self.ce_job_id,job_sub_status,description)
-            return "FAILED"
-
-        # Status 4: Job cancelled. Show some details
-        if self.job_status == 4:
-            if not self.job_sub_id:
-                print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_CANCELLED")
-            elif job_sub_status == 9:
-                print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"CANCELLED",description)
-            elif job_sub_status == 109:
-                print "- %-8s %-60s %s %s"%(self.job_name,self.ce_job_id,"CANCELLED - Output Problem",description)
-            else:
-                print "- %-8s %-60s CANCELLED with status %d (?) %s"%(self.job_name,self.ce_job_id,job_sub_status,description)
             return "FAILED"
 
         # Status is 1: Job is being processed
@@ -179,7 +173,8 @@ class ProdJob:
                 if self.finalize_job():
                     if job_exit_code == "0":
                         self.db.close_job_submit(self.job_sub_id,7,job_description)
-                        self.db.close_job(self.job_id,2)
+                        self.job_status = 2
+                        self.db.close_job(self.job_id,self.job_status)
                         return "SUCCESSFUL"
                     else:
                         print "  WARNING job id DONE_OK but RC is %s"%job_exit_code
@@ -204,6 +199,7 @@ class ProdJob:
                 job_resubmit = True
             elif job_ce_status == "UNKNOWN":
                 if job_sub_status != 11: self.db.set_job_submit_status(self.job_sub_id,11)
+                if self.prod_quit: self.cancel_job()
                 return "UNDEF"
             else:
                 if job_sub_status != 12:
@@ -217,25 +213,23 @@ class ProdJob:
                 # If we get here, the job finished with some problem: see if we can resubmit it
 
                 self.resubmissions += 1
-                if self.prod_quit:
-                    # Production was cancelled: tag job as failed
-                    print "  WARNING - production in quit mode: job %s will not be resubmitted"%self.job_name
-                    self.db.close_job(self.job_id,3)
+                if self.prod_quit or (self.resubmissions >= self.resubmit_max):
+                    # Production was cancelled or job was resubmitted too many times: tag job as failed
+                    if self.prod_quit:
+                        print "  WARNING - production in quit mode: job %s will not be resubmitted"%self.job_name
+                    if self.resubmissions >= self.resubmit_max:
+                        print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,resubmit)
+                    self.job_status = 3
+                    self.db.close_job(self.job_id,self.job_status)
                     return "FAILED"
-                elif self.resubmissions >= self.resubmit_max:
-                    # Job was resubmitted too many times, tag it as failed
-                    print "  WARNING - job %s failed %d times and will not be resubmitted"%(job_name,resubmit)
-                    self.db.close_job(self.job_id,3)
-                    return "FAILED"
+                elif self.submit_job():
+                    print "- %s %s RESUBMITTED"%(self.job_name,self.ce_job_id)
+                    return "ACTIVE"
                 else:
-                    # Resubmit the job
-                    if self.submit_job():
-                        print "- %s %s RESUBMITTED"%(self.job_name,self.ce_job_id)
-                        return "ACTIVE"
-                    else:
-                        print " WARNING - unable to resubmit job %s: tagging it as failed"%self.job_name
-                        self.db.close_job(self.job_id,3)
-                        return "FAILED"
+                    print " WARNING - unable to resubmit job %s: tagging it as failed"%self.job_name
+                    self.job_status = 3
+                    self.db.close_job(self.job_id,self.job_status)
+                    return "FAILED"
     
     def submit_job(self):
     
