@@ -15,7 +15,7 @@ SELECT
                 WHEN 1 THEN '1 Active'
                 WHEN 2 THEN '2 Success'
                 WHEN 3 THEN '3 Fail'
-                ELSE 'Unknown'
+                ELSE CONCAT(LPAD(j.status,1," "),' ???')
   END                                AS 'job status',
   LPAD(FORMAT(j.n_events,0),8," ")   AS events,
   s.submit_index                     AS 'sub idx',
@@ -36,7 +36,7 @@ SELECT
                 WHEN 108 THEN '108 Done-Failed - No Out'
                 WHEN 109 THEN '109 Cancelled - No Out'
                 WHEN 207 THEN '207 Done-OK - RC!=0'
-                         ELSE '??? Unknown'
+                         ELSE CONCAT(LPAD(s.status,3," "),' ???')
   END                                AS 'sub status',
   s.exit_code                        AS 'exit code',
   s.ce_job_id                        AS 'ce job id',

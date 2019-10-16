@@ -15,7 +15,7 @@ SELECT
                 WHEN 1 THEN '1 Processing'
                 WHEN 2 THEN '2 Success'
                 WHEN 3 THEN '3 Fail'
-                ELSE 'Unknown'
+                ELSE CONCAT(LPAD(j.status,1," "),' ???')
   END                                AS 'job status',
   j.job_dir                          AS directory,
   f.name                             AS file,

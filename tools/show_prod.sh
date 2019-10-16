@@ -13,7 +13,7 @@ SELECT
   p.prod_ce                           AS CE,
   LPAD(FORMAT(p.n_jobs,0),4," ")      AS 'jobs',
   LPAD(FORMAT(p.n_jobs_ok,0),7," ")   AS 'jobs ok',
-  LPAD(FORMAT(p.n_jobs_fail,0),7," ") AS 'jobs fail',
+  LPAD(FORMAT(p.n_jobs_fail,0),9," ") AS 'jobs fail',
   LPAD(FORMAT(p.n_events,0),12," ")   AS 'total events',
   p.time_create                       AS 'time create',
   p.time_complete                     AS 'time complete'
