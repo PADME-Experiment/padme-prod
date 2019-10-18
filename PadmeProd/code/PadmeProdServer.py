@@ -185,7 +185,7 @@ class PadmeProdServer:
     def quit_production(self):
 
         # Tell all jobs to quit as fast as possible
-        for job in self.job_list: job.prod_quit = True
+        for job in self.job_list: job.job_quit = True
 
         # When in quit mode, speed up final checks
         self.prod_check_delay = 60
