@@ -73,7 +73,7 @@ class PadmeMCDB:
 
         return prod_id
 
-    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs):
+    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
         prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
 
@@ -99,6 +99,24 @@ class PadmeMCDB:
         c = self.conn.cursor()
         c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_jobs_fail = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_jobs_fail,n_events,prod_id))
         self.conn.commit()
+
+    def get_prod_type(self,prod_id):
+
+        self.check_db()
+        c = self.conn.cursor()
+
+        c.execute("""SELECT id FROM reco_prod WHERE production_id = %s""",(prod_id,))
+        if c.rowcount != 0:
+            self.conn.commit()
+            return "RECO"
+
+        c.execute("""SELECT id FROM mc_prod WHERE production_id = %s""",(prod_id,))
+        if c.rowcount != 0:
+            self.conn.commit()
+            return "MC"
+
+        self.conn.commit()
+        return "UNKNOWN"
 
     def set_prod_job_numbers(self,prod_id,jobs_ok,jobs_fail):
 

@@ -31,11 +31,15 @@ if [ $PROBLEMS -eq 0 ]; then
     if [ $OS_VERSION == "slc6" ]; then
 	SCRIPT_GCC=/cvmfs/sft.cern.ch/lcg/releases/LCG_87/gcc/4.9.3/x86_64-slc6/setup.sh
 	SCRIPT_ROOT=/cvmfs/sft.cern.ch/lcg/app/releases/ROOT/5.34.36/x86_64-slc6-gcc49-opt/root/bin/thisroot.sh
+	SCRIPT_GEANT4=/cvmfs/geant4.cern.ch/geant4/10.3.ref01/x86_64-slc6-gcc49-opt/bin/geant4.sh
+	SCRIPT_GEANT4MAKE=/cvmfs/geant4.cern.ch/geant4/10.3.ref01/x86_64-slc6-gcc49-opt/share/Geant4-10.3.0/geant4make/geant4make.sh
     fi
 
     if [ $OS_VERSION == "centos7" ]; then
 	SCRIPT_GCC=/cvmfs/sft.cern.ch/lcg/contrib/gcc/4.9/x86_64-centos7-gcc49-opt/setup.sh
 	SCRIPT_ROOT=/cvmfs/sft.cern.ch/lcg/app/releases/ROOT/5.34.36/x86_64-centos7-gcc49-opt/root/bin/thisroot.sh
+	SCRIPT_GEANT4=/cvmfs/geant4.cern.ch/geant4/10.3.ref01/x86_64-slc6-gcc49-opt/bin/geant4.sh
+	SCRIPT_GEANT4MAKE=/cvmfs/geant4.cern.ch/geant4/10.3.ref01/x86_64-slc6-gcc49-opt/share/Geant4-10.3.0/geant4make/geant4make.sh
     fi
 
     # Look for gcc configuration script
@@ -50,14 +54,29 @@ if [ $PROBLEMS -eq 0 ]; then
         PROBLEMS=1
     fi
 
+    # Look for GEANT4 configuration script
+    if [ ! -f $SCRIPT_GEANT4 ]; then
+        echo "ERROR - File $SCRIPT_GEANT4 not found. Aborting"
+        PROBLEMS=1
+    fi
+
+    # Look for GEANT4MAKE configuration script
+    if [ ! -f $SCRIPT_GEANT4MAKE ]; then
+        echo "ERROR - File $SCRIPT_GEANT4MAKE not found. Aborting"
+        PROBLEMS=1
+    fi
+
 fi
 
 if [ $PROBLEMS -eq 0 ]; then
 
     . $SCRIPT_GCC
     . $SCRIPT_ROOT
+    . $SCRIPT_GEANT4
+    . $SCRIPT_GEANT4MAKE
 
     PADME=$( dirname $( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd ) )
+    export PADMEMC_EXE=$PADME/$OS_VERSION/bin/PADMEMC
     export PADMERECO_EXE=$PADME/$OS_VERSION/bin/PadmeReco
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PADME/$OS_VERSION/lib
 

@@ -9,6 +9,8 @@ fi
 
 mysql --table -h percona.lnf.infn.it -P 3306 -u padmeMCDB -p$PADME_MCDB_PASSWD PadmeMCDB <<EOF
 SELECT
+  r.run                               AS run,
+  r.reco_version                      AS version,
   p.name                              AS production,
   p.prod_ce                           AS CE,
   LPAD(FORMAT(p.n_jobs,0),4," ")      AS 'jobs',
@@ -18,6 +20,7 @@ SELECT
   p.time_create                       AS 'time create',
   p.time_complete                     AS 'time complete'
 FROM production p
+  INNER JOIN reco_prod r ON r.production_id=p.id
 $test_prod
 ORDER BY p.name;
 EOF
