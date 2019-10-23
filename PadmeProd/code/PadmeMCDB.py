@@ -211,6 +211,16 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
+        c.execute("""SELECT p.prod_dir,j.job_dir FROM production p INNER JOIN job j ON j.production_id=p.id WHERE j.id=%s""",(job_id,))
+        res = c.fetchone()
+        self.conn.commit()
+        if (res == None): return ""
+        return "%s/%s"%res
+
+    def get_job_local_dir(self,job_id):
+
+        self.check_db()
+        c = self.conn.cursor()
         c.execute("""SELECT job_dir FROM job WHERE id=%s""",(job_id,))
         res = c.fetchone()
         self.conn.commit()

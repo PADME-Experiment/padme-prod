@@ -219,11 +219,19 @@ def main(argv):
         PROD_NAME = "%s_%s"%(PROD_RUN_NAME,PROD_RECO_VERSION)
         if PROD_DEBUG: print "No Production Name specified: using %s"%PROD_NAME
 
+    # If storage directory was not specified, use default
     if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = "/daq/%s/recodata/%s"%(PROD_YEAR,PROD_NAME)
+        PROD_STORAGE_DIR = "/daq/%s/recodata/%s/%s"%(PROD_YEAR,PROD_RECO_VERSION,PROD_NAME)
 
+    # If production directory was not specified, use default
     if PROD_DIR == "":
-        PROD_DIR = "prod/%s"%PROD_NAME
+        version_dir = "prod/%s"%PROD_RECO_VERSION
+        if os.path.exists(version_dir):
+            os.mkdir(version_dir)
+        elif not os.path.isdir(version_dir):
+            print "*** ERROR *** '%s' exists but is not a directory"%version_dir
+            sys.exit(2)
+        PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
 
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
@@ -316,7 +324,8 @@ def main(argv):
         jobName = "job%05d"%j
 
         # Create dir to hold individual job info
-        jobDir = "%s/%s"%(PROD_DIR,jobName)
+        jobLocalDir = jobName
+        jobDir = "%s/%s"%(PROD_DIR,jobLocalDir)
         try:
             os.mkdir(jobDir)
         except:
@@ -367,7 +376,7 @@ def main(argv):
         # Create job entry in DB and register job
         jobCfg = ""
         with open(jobListFile,"r") as jlf: jobList = jlf.read()
-        DB.create_job(prodId,jobName,jobDir,jobCfg,jobList)
+        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList)
 
     # From now on we do not need the DB anymore: close connection
     DB.close_db()
