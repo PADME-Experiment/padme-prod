@@ -203,7 +203,7 @@ def main(argv):
     # If production directory was not specified, use default
     if PROD_DIR == "":
         version_dir = "prod/%s"%PROD_MC_VERSION
-        if os.path.exists(version_dir):
+        if not os.path.exists(version_dir):
             os.mkdir(version_dir)
         elif not os.path.isdir(version_dir):
             print "*** ERROR *** '%s' exists but is not a directory"%version_dir
