@@ -52,6 +52,7 @@ PROD_FILES_PER_JOB_MAX = 1000
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
 PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_PROD
+PROD_SOURCE_URI = PADME_SRM_URI["LNF"]
 PROD_CE_NODE = ""
 PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
@@ -72,6 +73,7 @@ def print_help():
     print "  -n <prod_name>\tname for the production. Default: <run_name>_<version>"
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
+    print "  -S <source_uri>\tURI to use to get list of files to process"
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
@@ -96,7 +98,7 @@ def rawfile_sort_key(f):
 def get_run_file_list(run):
 
     run_file_list = []
-    run_dir = "%s/daq/%s/rawdata/%s"%(PADME_SRM_URI["LNF"],PROD_YEAR,run)
+    run_dir = "%s/daq/%s/rawdata/%s"%(PROD_SOURCE_URI,PROD_YEAR,run)
     for line in run_command("gfal-ls %s"%run_dir):
         if PROD_DEBUG >= 2: print line.rstrip()
         if re.match("^gfal-ls error: ",line):
@@ -115,6 +117,7 @@ def main(argv):
     global PROD_STORAGE_DIR
     global PROD_DIR
     global PROD_SCRIPT
+    global PROD_SOURCE_URI
     global PROD_CE_NODE
     global PROD_CE_PORT
     global PROD_CE_QUEUE
@@ -127,7 +130,7 @@ def main(argv):
     global PROD_DESCRIPTION
 
     try:
-        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:C:P:Q:v:p:D:",[])
+        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:S:C:P:Q:v:p:D:",[])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -146,6 +149,8 @@ def main(argv):
             PROD_NAME = arg
         elif opt == '-v':
             PROD_RECO_VERSION = arg
+        elif opt == '-S':
+            PROD_SOURCE_URI = arg
         elif opt == '-C':
             PROD_CE_NODE = arg
         elif opt == '-P':
