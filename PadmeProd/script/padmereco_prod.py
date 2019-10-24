@@ -90,16 +90,41 @@ def main(argv):
     signal.alarm(PROXY_RENEW_TIME)
 
     # Prepare shell script to run PadmeReco
-    sf = open("job.sh","w")
-    sf.write("#!/bin/bash\n")
-    sf.write("echo \"--- Starting PADMERECO production ---\"\n")
-    sf.write(". %s\n"%padmereco_init_file)
-    sf.write("echo \"PADME = $PADME\"\n")
-    sf.write("echo \"PADMERECO_EXE = $PADMERECO_EXE\"\n")
-    sf.write("echo \"LD_LIBRARY_PATH = $LD_LIBRARY_PATH\"\n")
-    sf.write("$PADMERECO_EXE -l %s -o %s -n 0\n"%(input_list,output_file))
-    sf.write("pwd; ls -l\n")
-    sf.close()
+    script = """#!/bin/bash
+echo "--- Starting PADMERECO production ---"
+date
+. %s
+if [-z "$PADME"]; then
+    echo "Variable PADME is not set: aborting"
+    exit 1
+else 
+    echo "PADME = $PADME"
+fi
+if [-z "$PADMERECO_EXE"]; then
+    echo "Variable PADMERECO_EXE is not set: aborting"
+    exit 1
+else
+    echo "PADMERECO_EXE = $PADMERECO_EXE"
+fi
+echo "LD_LIBRARY_PATH = $LD_LIBRARY_PATH"
+$PADMERECO_EXE -l %s -o %s -n 0
+pwd
+ls -l
+date
+echo "--- Ending PADMERECO production ---"
+exit 0
+"""%(padmereco_init_file,input_list,output_file)
+    with open("job.sh","w") as sf: sf.write(script)
+    #sf = open("job.sh","w")
+    #sf.write("#!/bin/bash\n")
+    #sf.write("echo \"--- Starting PADMERECO production ---\"\n")
+    #sf.write(". %s\n"%padmereco_init_file)
+    #sf.write("echo \"PADME = $PADME\"\n")
+    #sf.write("echo \"PADMERECO_EXE = $PADMERECO_EXE\"\n")
+    #sf.write("echo \"LD_LIBRARY_PATH = $LD_LIBRARY_PATH\"\n")
+    #sf.write("$PADMERECO_EXE -l %s -o %s -n 0\n"%(input_list,output_file))
+    #sf.write("pwd; ls -l\n")
+    #sf.close()
 
     # Run job script sending its output/error to stdout/stderr
     print "Program starting at %s (UTC)"%now_str()
@@ -138,6 +163,7 @@ def main(argv):
 
         print "ERROR Some errors occourred during reconstruction. Please check log."
         print "Output files will not be saved to tape storage."
+        sys.exit(1)
 
     print "Job ending at %s (UTC)"%now_str()
 
