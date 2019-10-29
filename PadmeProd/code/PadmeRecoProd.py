@@ -82,10 +82,16 @@ def print_help():
     print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
 
-def run_command(command):
+#def run_command(command):
+#    if PROD_DEBUG: print "> %s"%command
+#    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+#    return iter(p.stdout.readline,b'')
+
+def execute_command(command):
     if PROD_DEBUG: print "> %s"%command
-    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    return iter(p.stdout.readline,b'')
+    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    return (p.returncode,out,err)
 
 def rawfile_sort_key(f):
     r = re.match("^.*_(\d\d)_(\d\d\d).root$",f)
@@ -99,12 +105,34 @@ def get_run_file_list(run):
 
     run_file_list = []
     run_dir = "%s/daq/%s/rawdata/%s"%(PROD_SOURCE_URI,PROD_YEAR,run)
-    for line in run_command("gfal-ls %s"%run_dir):
-        if PROD_DEBUG >= 2: print line.rstrip()
-        if re.match("^gfal-ls error: ",line):
-            print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
-            sys.exit(2)
-        run_file_list.append(line.rstrip())
+
+    #for line in run_command("gfal-ls %s"%run_dir):
+    #    if PROD_DEBUG >= 2: print line.rstrip()
+    #    if re.match("^gfal-ls error: ",line):
+    #        print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
+    #        sys.exit(2)
+    #    run_file_list.append(line.rstrip())
+
+    tries = 0
+    cmd = "gfal-ls %s"%run_dir
+    while True:
+        (rc,out,err) = execute_command(cmd)
+        if rc == 0:
+            for line in iter(out.splitlines()):
+                if PROD_DEBUG >= 2: print line
+                run_file_list.append(line)
+            break
+        else:
+            print "WARNING gfal-ls returned error status %d while retrieving file list from run dir %s"%(rc,run_dir)
+            if PROD_DEBUG:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
+            tries += 1
+            if tries >= 3:
+                print "*** ERROR *** Could not retrieve list of files in %s. Tried %d times."%(run_dir,tries)
+                break
+            time.sleep(5)
+
     run_file_list.sort(key=rawfile_sort_key)
     return run_file_list
 

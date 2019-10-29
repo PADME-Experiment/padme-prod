@@ -125,6 +125,12 @@ class PadmeMCDB:
         c.execute("""UPDATE production SET n_jobs_ok = %s, n_jobs_fail = %s WHERE id = %s""",(jobs_ok,jobs_fail,prod_id))
         self.conn.commit()
 
+    def set_prod_n_events(self,prod_id,n_events):
+
+        self.check_db()
+        c = self.conn.cursor()
+        c.execute("""UPDATE production SET n_events = %s WHERE id = %s""",(n_events,prod_id))
+        self.conn.commit()
 
     def get_prod_total_events(self,prod_id):
 
