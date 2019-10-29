@@ -52,6 +52,7 @@ PROD_FILES_PER_JOB_MAX = 1000
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
 PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_PROD
+PROD_SOURCE_URI = PADME_SRM_URI["LNF"]
 PROD_CE_NODE = ""
 PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
@@ -72,6 +73,7 @@ def print_help():
     print "  -n <prod_name>\tname for the production. Default: <run_name>_<version>"
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
+    print "  -S <source_uri>\tURI to use to get list of files to process"
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
@@ -80,10 +82,16 @@ def print_help():
     print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
 
-def run_command(command):
+#def run_command(command):
+#    if PROD_DEBUG: print "> %s"%command
+#    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+#    return iter(p.stdout.readline,b'')
+
+def execute_command(command):
     if PROD_DEBUG: print "> %s"%command
-    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    return iter(p.stdout.readline,b'')
+    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    return (p.returncode,out,err)
 
 def rawfile_sort_key(f):
     r = re.match("^.*_(\d\d)_(\d\d\d).root$",f)
@@ -96,13 +104,35 @@ def rawfile_sort_key(f):
 def get_run_file_list(run):
 
     run_file_list = []
-    run_dir = "%s/daq/%s/rawdata/%s"%(PADME_SRM_URI["LNF"],PROD_YEAR,run)
-    for line in run_command("gfal-ls %s"%run_dir):
-        if PROD_DEBUG >= 2: print line.rstrip()
-        if re.match("^gfal-ls error: ",line):
-            print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
-            sys.exit(2)
-        run_file_list.append(line.rstrip())
+    run_dir = "%s/daq/%s/rawdata/%s"%(PROD_SOURCE_URI,PROD_YEAR,run)
+
+    #for line in run_command("gfal-ls %s"%run_dir):
+    #    if PROD_DEBUG >= 2: print line.rstrip()
+    #    if re.match("^gfal-ls error: ",line):
+    #        print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
+    #        sys.exit(2)
+    #    run_file_list.append(line.rstrip())
+
+    tries = 0
+    cmd = "gfal-ls %s"%run_dir
+    while True:
+        (rc,out,err) = execute_command(cmd)
+        if rc == 0:
+            for line in iter(out.splitlines()):
+                if PROD_DEBUG >= 2: print line
+                run_file_list.append(line)
+            break
+        else:
+            print "WARNING gfal-ls returned error status %d while retrieving file list from run dir %s"%(rc,run_dir)
+            if PROD_DEBUG:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
+            tries += 1
+            if tries >= 3:
+                print "*** ERROR *** Could not retrieve list of files in %s. Tried %d times."%(run_dir,tries)
+                break
+            time.sleep(5)
+
     run_file_list.sort(key=rawfile_sort_key)
     return run_file_list
 
@@ -115,6 +145,7 @@ def main(argv):
     global PROD_STORAGE_DIR
     global PROD_DIR
     global PROD_SCRIPT
+    global PROD_SOURCE_URI
     global PROD_CE_NODE
     global PROD_CE_PORT
     global PROD_CE_QUEUE
@@ -127,7 +158,7 @@ def main(argv):
     global PROD_DESCRIPTION
 
     try:
-        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:C:P:Q:v:p:D:",[])
+        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:S:C:P:Q:v:p:D:",[])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -146,6 +177,8 @@ def main(argv):
             PROD_NAME = arg
         elif opt == '-v':
             PROD_RECO_VERSION = arg
+        elif opt == '-S':
+            PROD_SOURCE_URI = arg
         elif opt == '-C':
             PROD_CE_NODE = arg
         elif opt == '-P':
@@ -219,11 +252,19 @@ def main(argv):
         PROD_NAME = "%s_%s"%(PROD_RUN_NAME,PROD_RECO_VERSION)
         if PROD_DEBUG: print "No Production Name specified: using %s"%PROD_NAME
 
+    # If storage directory was not specified, use default
     if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = "/daq/%s/recodata/%s"%(PROD_YEAR,PROD_NAME)
+        PROD_STORAGE_DIR = "/daq/%s/recodata/%s/%s"%(PROD_YEAR,PROD_RECO_VERSION,PROD_NAME)
 
+    # If production directory was not specified, use default
     if PROD_DIR == "":
-        PROD_DIR = "prod/%s"%PROD_NAME
+        version_dir = "prod/%s"%PROD_RECO_VERSION
+        if not os.path.exists(version_dir):
+            os.mkdir(version_dir)
+        elif not os.path.isdir(version_dir):
+            print "*** ERROR *** '%s' exists but is not a directory"%version_dir
+            sys.exit(2)
+        PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
 
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
@@ -316,7 +357,8 @@ def main(argv):
         jobName = "job%05d"%j
 
         # Create dir to hold individual job info
-        jobDir = "%s/%s"%(PROD_DIR,jobName)
+        jobLocalDir = jobName
+        jobDir = "%s/%s"%(PROD_DIR,jobLocalDir)
         try:
             os.mkdir(jobDir)
         except:
@@ -367,7 +409,7 @@ def main(argv):
         # Create job entry in DB and register job
         jobCfg = ""
         with open(jobListFile,"r") as jlf: jobList = jlf.read()
-        DB.create_job(prodId,jobName,jobDir,jobCfg,jobList)
+        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList)
 
     # From now on we do not need the DB anymore: close connection
     DB.close_db()

@@ -197,10 +197,18 @@ def main(argv):
         sys.exit(2)
 
     # If storage directory was not specified, use default
-    if PROD_STORAGE_DIR == "": PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_MC_VERSION,PROD_NAME)
+    if PROD_STORAGE_DIR == "":
+        PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_MC_VERSION,PROD_NAME)
 
     # If production directory was not specified, use default
-    if PROD_DIR == "": PROD_DIR = "prod/%s"%PROD_NAME
+    if PROD_DIR == "":
+        version_dir = "prod/%s"%PROD_MC_VERSION
+        if not os.path.exists(version_dir):
+            os.mkdir(version_dir)
+        elif not os.path.isdir(version_dir):
+            print "*** ERROR *** '%s' exists but is not a directory"%version_dir
+            sys.exit(2)
+        PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
 
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
@@ -280,7 +288,8 @@ def main(argv):
         jobName = "job%05d"%j
 
         # Create dir to hold individual job info
-        jobDir = "%s/%s"%(PROD_DIR,jobName)
+        jobLocalDir = jobName
+        jobDir = "%s/%s"%(PROD_DIR,jobLocalDir)
         try:
             os.mkdir(jobDir)
         except:
@@ -334,7 +343,7 @@ def main(argv):
         # Create job entry in DB and register job (no input file list)
         with open(jobCfgFile,"r") as jcf: jobCfg=jcf.read()
         jobList = ""
-        DB.create_job(prodId,jobName,jobDir,jobCfg,jobList)
+        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList)
 
     # From now on we do not need the DB anymore: close connection
     DB.close_db()

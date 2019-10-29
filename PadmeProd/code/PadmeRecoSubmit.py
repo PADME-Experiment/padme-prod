@@ -56,13 +56,14 @@ PROD_RUN_SITE = "LNF"
 PROD_STORAGE_SITE = "LNF"
 PROD_SUBMIT_DELAY = 60
 PROD_PROXY_FILE = "prod/long_proxy"
+PROD_SOURCE_URI = ""
 
 # Initialize list of runs to process
 PROD_RUN_LIST = []
 
 def print_help():
 
-    print "%s [-L <run_list_file>] [-r <run>] [-j <files_per_job>] [-v <version>] [-s <submission_site>] [-Q <CE_queue>] [-P <CE_port>] [-d <storage_site>] [-D <submit_delay>] [-V] [-h]"%SCRIPT_NAME
+    print "%s [-L <run_list_file>] [-r <run>] [-j <files_per_job>] [-v <version>] [-s <submission_site>] [-Q <CE_queue>] [-P <CE_port>] [-S <source_uri>] [-d <storage_site>] [-D <submit_delay>] [-V] [-h]"%SCRIPT_NAME
     print "  -L <run_list_file>\tfile with list of runs to process"
     print "  -r <run_name>\t\tname of run to process"
     print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: %s"%PROD_RECO_VERSION
@@ -70,6 +71,7 @@ def print_help():
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE_LIST.keys()),PROD_RUN_SITE)
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT_DEFAULT
     print "  -Q <CE_queue>\t\tCE queue to use for submission. Default from submission site"
+    print "  -S <source_uri>\tURI to use to get list of files for production run"
     print "  -d <storage_site>\tsite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_STORAGE_SITES),PROD_STORAGE_SITE)
     print "  -D <submit_delay>\tDelay in sec between run submissions. Default: %d sec"%PROD_SUBMIT_DELAY
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
@@ -105,6 +107,7 @@ def main(argv):
     global PROD_RUN_SITE
     global PROD_STORAGE_SITE
     global PROD_SUBMIT_DELAY
+    global PROD_SOURCE_URI
 
     global PROD_RUN_LIST
 
@@ -113,7 +116,7 @@ def main(argv):
     PROD_CE_QUEUE = ""
 
     try:
-        opts,args = getopt.getopt(argv,"hVL:r:j:v:s:P:Q:d:D:",[])
+        opts,args = getopt.getopt(argv,"hVL:r:j:v:s:P:Q:d:D:S:",[])
     except getopt.GetoptError:
         print_help()
         sys.exit(2)
@@ -134,6 +137,8 @@ def main(argv):
             PROD_CE_PORT_DEFAULT = arg
         elif opt == '-Q':
             PROD_CE_QUEUE = arg
+        elif opt == '-S':
+            PROD_SOURCE_URI = arg
         elif opt == '-j':
             try:
                 PROD_FILES_PER_JOB = int(arg)
@@ -171,11 +176,13 @@ def main(argv):
                 print_help()
                 sys.exit(2)
 
-    # Remove duplicates from list of runs to be processed
+    # Remove duplicates from list of runs to be processed and sort it
     PROD_RUN_LIST = list(set(PROD_RUN_LIST))
+    PROD_RUN_LIST.sort()
+    n_runs = len(PROD_RUN_LIST)
 
     # Check if at least one run was specified
-    if not len(PROD_RUN_LIST):
+    if n_runs == 0:
         print "*** ERROR *** No runs specified"
         print_help()
         sys.exit(2)
@@ -197,17 +204,16 @@ def main(argv):
     # CEs at submission site will be used in round robin to avoid overload
     PROD_CE_INDEX = 0
 
-    first = True
+    n_run = 0
+    print "- Creating production for %d runs"%n_runs
     for run in PROD_RUN_LIST:
 
-        if first:
-            first = False
-        else:
-            # Wait before submitting next run
-            time.sleep(PROD_SUBMIT_DELAY)
+        # Wait before submitting next run
+        if n_run > 0: time.sleep(PROD_SUBMIT_DELAY)
+        n_run += 1
 
         print
-        print "=== Submitting run %s"%run
+        print "=== %4d/%-4d === Submitting run %s ==="%(n_run,n_runs,run)
 
         # Choose CE from site list and extract port number (if any)
         PROD_CE = PADME_CE_NODE_LIST[PROD_RUN_SITE][PROD_CE_INDEX]
@@ -220,6 +226,10 @@ def main(argv):
             PROD_CE_PORT = PROD_CE_PORT_DEFAULT
 
         PROD_CMD = "%s -r %s -j %d -v %s -C %s -P %s -Q %s -p %s"%(PADMERECOPROD,run,PROD_FILES_PER_JOB,PROD_RECO_VERSION,PROD_CE_NODE,PROD_CE_PORT,PROD_CE_QUEUE,PROD_PROXY_FILE)
+
+        # Add surce URI if specified
+        if PROD_SOURCE_URI:
+            PROD_CMD += " -S %s"%PROD_SOURCE_URI
 
         # Add debug option(s) if required
         if PROD_DEBUG:
