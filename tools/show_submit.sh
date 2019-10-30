@@ -32,6 +32,7 @@ SELECT
                 WHEN  10 THEN ' 10 Aborted'
                 WHEN  11 THEN ' 11 Unknown'
                 WHEN  12 THEN ' 12 Undef'
+                WHEN 100 THEN '100 Submit-Failed'
                 WHEN 107 THEN '107 Done-OK - No Out'
                 WHEN 108 THEN '108 Done-Failed - No Out'
                 WHEN 109 THEN '109 Cancelled - No Out'

@@ -75,6 +75,7 @@ class ProdJob:
              10: "ABORTED",
              11: "UNKNOWN",
              12: "UNDEF",
+            100: "SUBMIT-FAILED",
             107: "DONE-OK, output problem",
             108: "DONE-FAILED, output problem",
             109: "CANCELLED, output problem",
@@ -118,6 +119,7 @@ class ProdJob:
                 return "ACTIVE"
             else:
                 # If submission failed, leave job in CREATED mode and try again next time
+                self.db.set_job_submit_status(self.job_sub_id,100)
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_FAILED")
                 return "CREATED"
 
