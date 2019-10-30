@@ -113,7 +113,7 @@ class PadmeProdServer:
             if os.path.exists(quit_file): self.quit_production()
 
             # Call method to check jobs status and handle each job accordingly
-            (jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
+            (jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
 
             # Update database if any new job reached final state
             if ( (jobs_success != jobs_success_old) or (jobs_fail != jobs_fail_old) ):
@@ -123,10 +123,10 @@ class PadmeProdServer:
                 jobs_fail_old = jobs_fail
 
             # Show current production state
-            print "Jobs: active %d success %d fail %d undef %d"%(jobs_active,jobs_success,jobs_fail,jobs_undef)
+            print "Jobs: unsubmitted %d active %d success %d fail %d undef %d"%(jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef)
 
             # If all jobs are in a final state (either success or fail), production is over
-            if jobs_active+jobs_undef == 0:
+            if jobs_created+jobs_active+jobs_undef == 0:
                 print "--- No unfinished jobs left: production is done ---"
                 break
 
@@ -136,7 +136,7 @@ class PadmeProdServer:
             else:
                 undef_counter += 1
                 if undef_counter < 10:
-                    print "WARNING: %d jobs in UNDEF state for %d iteration(s)"%(jobs_undef,undef_counter)
+                    print "  WARNING: %d jobs in UNDEF state for %d iteration(s)"%(jobs_undef,undef_counter)
                 else:
                     print "*** More than 10 consecutive iterations with jobs in UNDEF state: quitting production ***"
                     self.quit_production()
@@ -160,6 +160,7 @@ class PadmeProdServer:
     
     def handle_jobs(self):
     
+        jobs_created = 0
         jobs_active = 0
         jobs_success = 0
         jobs_fail = 0
@@ -173,15 +174,16 @@ class PadmeProdServer:
         for job in self.job_list:
 
             status = job.update()
-            if   status == "ACTIVE":     jobs_active  += 1
+            if   status == "CREATED":    jobs_created += 1
+            elif status == "ACTIVE":     jobs_active  += 1
             elif status == "SUCCESSFUL": jobs_success += 1
             elif status == "FAILED":     jobs_fail    += 1
-            elif status == "UNDEF":      jobs_undef += 1
+            elif status == "UNDEF":      jobs_undef   += 1
             else:
                 print "  WARNING ProdJob returned unknown status '%s'"%status
                 jobs_undef += 1
 
-        return (jobs_active,jobs_success,jobs_fail,jobs_undef)
+        return (jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef)
 
     def quit_production(self):
 
