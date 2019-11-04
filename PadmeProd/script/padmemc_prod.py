@@ -85,24 +85,69 @@ def main(argv):
     signal.alarm(PROXY_RENEW_TIME)
 
     # Prepare shell script to run PadmeMC
-    sf = open("job.sh","w")
-    sf.write("#!/bin/bash\n")
-    sf.write("echo \"--- Starting PADMEMC production ---\"\n")
-    sf.write(". %s\n"%padmemc_init_file)
-    sf.write("echo \"PADME = $PADME\"\n")
-    sf.write("echo \"PADMEMC_EXE = $PADMEMC_EXE\"\n")
-    sf.write("echo \"LD_LIBRARY_PATH = $LD_LIBRARY_PATH\"\n")
-    sf.write("$PADMEMC_EXE %s\n"%macro_file)
-    sf.write("pwd; ls -l\n")
-    sf.close()
+    script = """#!/bin/bash
+echo "--- Starting PADMEMC production ---"
+date
+. %s
+if [ -z "$PADME" ]; then
+    echo "Variable PADME is not set: aborting"
+    exit 1
+else 
+    echo "PADME = $PADME"
+fi
+if [ -z "$PADMEMC_EXE" ]; then
+    echo "Variable PADMEMC_EXE is not set: aborting"
+    exit 1
+else
+    echo "PADMEMC_EXE = $PADMEMC_EXE"
+fi
+echo "LD_LIBRARY_PATH = $LD_LIBRARY_PATH"
+$PADMEMC_EXE %s
+pwd
+ls -l
+date
+echo "--- Ending PADMEMC production ---"
+exit 0
+"""%(padmemc_init_file,macro_file)
+    with open("job.sh","w") as sf: sf.write(script)
+    #sf = open("job.sh","w")
+    #sf.write("#!/bin/bash\n")
+    #sf.write("echo \"--- Starting PADMEMC production ---\"\n")
+    #sf.write(". %s\n"%padmemc_init_file)
+    #sf.write("echo \"PADME = $PADME\"\n")
+    #sf.write("echo \"PADMEMC_EXE = $PADMEMC_EXE\"\n")
+    #sf.write("echo \"LD_LIBRARY_PATH = $LD_LIBRARY_PATH\"\n")
+    #sf.write("$PADMEMC_EXE %s\n"%macro_file)
+    #sf.write("pwd; ls -l\n")
+    #sf.close()
 
     # Run job script sending its output/error to stdout/stderr
     print "Program starting at %s (UTC)"%now_str()
     job_cmd = "/bin/bash job.sh"
-    rc_mc = subprocess.call(job_cmd.split())
-    print "Program ending at %s (UTC)"%now_str()
+    #rc_mc = subprocess.call(job_cmd.split())
+    p = subprocess.Popen(shlex.split(job_cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    print "PADMEMC program ended with return code %s"%rc_mc
+    run_problems = False
+    while True:
+
+        reads = [p.stdout.fileno(), p.stderr.fileno()]
+        ret = select.select(reads, [], [],1.)
+
+        for fd in ret[0]:
+            if fd == p.stdout.fileno():
+                read = p.stdout.readline()
+                sys.stdout.write(read)
+            elif fd == p.stderr.fileno():
+                read = p.stderr.readline()
+                sys.stderr.write(read)
+
+        if p.poll() != None: break
+
+    rc_mc = p.returncode
+
+    #print "Program ending at %s (UTC)"%now_str()
+
+    print "PADMEMC program ended at %s (UTC) with return code %s"%(now_str(),rc_mc)
 
     if rc_mc == 0:
 

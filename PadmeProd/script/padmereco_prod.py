@@ -96,13 +96,13 @@ def main(argv):
 echo "--- Starting PADMERECO production ---"
 date
 . %s
-if [-z "$PADME"]; then
+if [ -z "$PADME" ]; then
     echo "Variable PADME is not set: aborting"
     exit 1
 else 
     echo "PADME = $PADME"
 fi
-if [-z "$PADMERECO_EXE"]; then
+if [ -z "$PADMERECO_EXE" ]; then
     echo "Variable PADMERECO_EXE is not set: aborting"
     exit 1
 else
