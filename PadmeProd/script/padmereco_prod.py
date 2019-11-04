@@ -7,7 +7,7 @@ import getopt
 import signal
 import time
 import subprocess
-import shutil
+import shlex
 import select
 
 PROXY_FILE = ""
@@ -20,7 +20,7 @@ def now_str():
 def get_adler32(outfile):
 
     adler_cmd = "adler32 %s"%outfile
-    p = subprocess.Popen(adler_cmd.split(),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    p = subprocess.Popen(shlex.split(adler_cmd),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     return p.communicate()[0].strip()
 
 def renew_proxy_handler(signum,frame):
