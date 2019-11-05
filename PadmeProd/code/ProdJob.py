@@ -102,12 +102,16 @@ class ProdJob:
         # 3: Failed
     
         # Check quit control file and quit job if found.
-        if os.path.exists(self.quit_file): self.job_quit = True
+        if os.path.exists(self.quit_file):
+            print "*** Quit file %s found: quitting job ***"%self.quit_file
+            self.job_quit = True
 
         # If status is 0, job must be submitted
         if self.job_status == 0:
-            self.resubmissions += 1
-            if self.job_quit or (self.resubmissions > self.resubmit_max):
+
+            if self.job_quit or (self.resubmissions >= self.resubmit_max):
+                if self.resubmissions >= self.resubmit_max:
+                    print "*** Resubmission %d exceeds max allowed %d: job tagged as FAILED ***"%(self.resubmissions,self.resubmit_max)
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_CANCELLED")
                 self.job_status = 3
                 self.db.close_job(self.job_id,self.job_status)
@@ -245,7 +249,13 @@ class ProdJob:
                 if self.job_quit: self.cancel_job()
                 return "UNDEF"
 
-            # Tag job as resubmittable
+            # If we are quitting, tag job as FAILED
+            if self.job_quit:
+                self.job_status = 3
+                self.db.set_job_status(self.job_id,self.job_status)
+                return "FAILED"
+        
+            # Otherwise tag job as CREATED (i.e. resubmittable)
             self.job_status = 0
             self.db.set_job_status(self.job_id,self.job_status)
             return "CREATED"
@@ -284,8 +294,9 @@ class ProdJob:
         # Go to job working directory
         os.chdir(self.job_dir)
     
-        # Create new job submission in DB
+        # Create new job submission in DB and count it
         self.job_sub_id = self.db.create_job_submit(self.job_id,self.resubmissions)
+        self.resubmissions += 1
 
         # Command to submit job (might need revision for CNAF job submissions)
         submit_cmd = "glite-ce-job-submit --autm-delegation --resource %s job.jdl"%self.ce

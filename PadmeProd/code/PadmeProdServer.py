@@ -110,7 +110,9 @@ class PadmeProdServer:
             self.ph.renew_voms_proxy(proxy_file)
     
             # Check quit control file and send quit command to all jobs if found.
-            if os.path.exists(quit_file): self.quit_production()
+            if os.path.exists(quit_file):
+                print "*** Quit file %s found: quitting production ***"%quit_file
+                self.quit_production()
 
             # Call method to check jobs status and handle each job accordingly
             (jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
