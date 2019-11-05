@@ -9,6 +9,7 @@ import time
 import subprocess
 import shlex
 import select
+import errno
 
 PROXY_FILE = ""
 PROXY_RENEW_TIME = 6*3600
@@ -137,8 +138,16 @@ exit 0
     run_problems = False
     while True:
 
-        reads = [p.stdout.fileno(), p.stderr.fileno()]
-        ret = select.select(reads, [], [],1.)
+        # Handle script output and error streams with select.
+        # Trap "Interrupted system call" error (happens when proxy is renewed)
+        reads = [p.stdout.fileno(),p.stderr.fileno()]
+        try:
+            ret = select.select(reads,[],[],1.)
+        except select.error as ex:
+            if ex[0] == errno.EINTR:
+                continue
+            else:
+                raise
 
         for fd in ret[0]:
             if fd == p.stdout.fileno():
@@ -152,8 +161,6 @@ exit 0
         if p.poll() != None: break
 
     rc_reco = p.returncode
-
-    #print "Program ending at %s (UTC)"%now_str()
 
     print "PADMERECO program ended at %s (UTC) with return code %s"%(now_str(),rc_reco)
 
@@ -181,6 +188,7 @@ exit 0
         else:
 
             print "WARNING File %s does not exist in current directory"%output_file
+            sys.exit(1)
 
     else:
 

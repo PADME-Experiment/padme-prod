@@ -2,12 +2,14 @@
 
 import os
 import sys
+import re
 import getopt
 import signal
 import time
 import subprocess
 import shlex
 import select
+import errno
 
 PROXY_FILE = ""
 PROXY_RENEW_TIME = 6*3600
@@ -131,8 +133,16 @@ exit 0
     run_problems = False
     while True:
 
-        reads = [p.stdout.fileno(), p.stderr.fileno()]
-        ret = select.select(reads, [], [],1.)
+        # Handle script output and error streams with select.
+        # Trap "Interrupted system call" error (happens when proxy is renewed)
+        reads = [p.stdout.fileno(),p.stderr.fileno()]
+        try:
+            ret = select.select(reads,[],[],1.)
+        except select.error as ex:
+            if ex[0] == errno.EINTR:
+                continue
+            else:
+                raise
 
         for fd in ret[0]:
             if fd == p.stdout.fileno():
@@ -146,11 +156,9 @@ exit 0
 
     rc_mc = p.returncode
 
-    #print "Program ending at %s (UTC)"%now_str()
-
     print "PADMEMC program ended at %s (UTC) with return code %s"%(now_str(),rc_mc)
 
-    if rc_mc == 0:
+    if rc_mc == 0 and not run_problems:
 
         print "--- Saving output files ---"
 
@@ -196,10 +204,16 @@ exit 0
 
             print "WARNING File hsto.root does not exist in current directory"
 
+        if not (os.path.exists("data.root") and os.path.exists("hsto.root")): sys.exit(1)
+
     else:
 
-        print "ERROR Some errors occourred during simulation. Please check log."
+        if run_problems:
+            print "WARNING Problems found while parsing program output. Please check log."
+        else:
+            print "WARNING Some errors occourred during simulation. Please check log."
         print "Output files will not be saved to tape storage."
+        sys.exit(1)
 
     print "Job ending at %s (UTC)"%now_str()
 
