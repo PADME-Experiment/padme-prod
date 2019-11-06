@@ -89,6 +89,9 @@ class ProdJob:
         # Define quit file: if found, job will cleanly quit
         self.quit_file = "%s/quit"%self.job_dir
 
+        if self.debug:
+            print "--- Job %s initialized ---"%self.job_name
+
     def execute_command(self,command):
 
         if self.debug: print "> %s"%command

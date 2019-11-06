@@ -67,7 +67,7 @@ class ProxyHandler:
         if self.cream_ce_endpoint and self.delegations:
             if self.debug: print "- Registering proxy delegations using current VOMS proxy"
             for delegation in self.delegations:
-                cmd = "glite-ce-delegate-proxy --endpoint %s %s"%(self.cream_ce_endpoint,delegation))
+                cmd = "glite-ce-delegate-proxy --endpoint %s %s"%(self.cream_ce_endpoint,delegation)
                 for line in self.run_command(cmd):
                     if self.debug: print line.rstrip()
 

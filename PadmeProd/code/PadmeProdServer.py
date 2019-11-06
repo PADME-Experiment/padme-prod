@@ -75,20 +75,10 @@ class PadmeProdServer:
 
         # Extract CE endpoint and register it to proxy handler for delegation renewal
         r = re.match("^(.*)/.*$",prod_ce)
-        if r:
-            self.ph.cream_ce_endpoint = r.group(1)
-        else:
-            print "WARNING Unable to extract CE endpoint from production CE %s"%prod_ce
-
-        # Register delegation id to proxy handler
-        self.ph.delegations.append(self.delegation_id)
-
-        # Define absolute path of VOMS proxy file which will be used for this production
-        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
-        # Assign it to the X509_USER_PROXY enivronment variable (used by glite commands)
-        os.environ['X509_USER_PROXY'] = voms_proxy
-        # Pass it to the ProxyHandler
-        self.ph.voms_proxy = voms_proxy
+        if not r:
+            print "*** ERROR *** Unable to extract CE endpoint from production CE %s"%prod_ce
+            sys.exit(1)
+        self.ph.cream_ce_endpoint = r.group(1)
 
         # Define name of control file: if found, this production will cleanly quit
         quit_file = "%s/quit"%prod_dir
@@ -99,15 +89,28 @@ class PadmeProdServer:
             print "*** ERROR *** Number of jobs in DB and in production are different: %s != %s"%(len(job_id_list),prod_njobs)
             sys.exit(1)
 
+        # All checks are good: ready to start real production activities
+        print "=== Starting Production %s ==="%self.prod_name
+
         # Create and configure job handlers
         for job_id in job_id_list:
             #self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
             self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.delegation_id,self.debug))
     
-        print "=== Starting Production %s ==="%self.prod_name
-    
-        # Create voms proxy and register production delegation to CE
+        # Define absolute path of VOMS proxy file which will be used for this production and pass it to the proxy handler
+        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
+        if self.debug: print "VOMS proxy for this production: %s"%voms_proxy
+        self.ph.voms_proxy = voms_proxy
+
+        # Assign VOMS proxy file to the X509_USER_PROXY enivronment variable used by glite commands
+        os.environ['X509_USER_PROXY'] = voms_proxy
+        if self.debug: print "Environment variable X509_USER_PROXY set to %s"%os.environ['X509_USER_PROXY']
+
+        # Create voms proxy to be used for this production
         self.ph.create_voms_proxy(proxy_file)
+
+        # Register delegation id using proxy handler
+        self.ph.delegations.append(self.delegation_id)
         self.ph.register_delegations()
 
         # Main production loop
@@ -156,7 +159,7 @@ class PadmeProdServer:
             # Release DB connection while idle
             self.db.close_db()
     
-            # Sleep for a while (use random to avoid coherent checks when multiple runs are active)
+            # Sleep for a while (use random to avoid coherent checks when concurrent productions are active)
             time.sleep(self.prod_check_delay+random.randint(0,self.prod_check_delay_spread+1))
     
         # Production is over: get total events, tag production as done and say bye bye
