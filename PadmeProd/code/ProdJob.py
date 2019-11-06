@@ -13,7 +13,8 @@ import shlex
 
 class ProdJob:
 
-    def __init__(self,job_id,ce,db,ph,debug):
+    #def __init__(self,job_id,ce,db,ph,debug):
+    def __init__(self,job_id,ce,db,delegation_id,debug):
 
         # Job identifier within the PadmeMCDB database
         self.job_id = job_id
@@ -27,12 +28,15 @@ class ProdJob:
         # Connection to PadmeMCDB database
         self.db = db
 
+        # Name of delegation to use for job submission
+        self.delegation_id = delegation_id
+
         # Get some job info from DB
         self.job_name = self.db.get_job_name(self.job_id)
         self.job_dir = self.db.get_job_dir(self.job_id)
 
-        # ProxyHandler is needed to store the job delegations
-        self.ph = ph
+        ## ProxyHandler is needed to store the job delegations
+        #self.ph = ph
 
         # Debug level
         self.debug = debug
@@ -173,8 +177,8 @@ class ProdJob:
             job_location = "%s@%s"%(job_local_user,job_worker_node)
             print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,job_ce_status,job_location,job_description)
 
-            # Register job delegation for proxy renewals
-            self.ph.delegations.append(job_delegation)
+            ## Register job delegation for proxy renewals
+            #self.ph.delegations.append(job_delegation)
 
             # Check current job status and update DB if it changed
             if job_ce_status == "REGISTERED" or job_ce_status == "PENDING" or job_ce_status == "IDLE" or job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING" or job_ce_status == "HELD":
@@ -299,7 +303,8 @@ class ProdJob:
         self.resubmissions += 1
 
         # Command to submit job (might need revision for CNAF job submissions)
-        submit_cmd = "glite-ce-job-submit --autm-delegation --resource %s job.jdl"%self.ce
+        #submit_cmd = "glite-ce-job-submit --autm-delegation --resource %s job.jdl"%self.ce
+        submit_cmd = "glite-ce-job-submit --delegationId %s --resource %s job.jdl"%(self.delegation_id,self.ce)
 
         # Handle job submission trapping errors and allowing for multiple retries
         submits = 0

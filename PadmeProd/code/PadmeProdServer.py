@@ -29,6 +29,8 @@ class PadmeProdServer:
 
         self.prod_id = None
 
+        self.delegation_id = "%s_%s"%(self.prod_name,os.getpid())
+
         self.job_list = []
 
         # Delay between two checks. Interval is flat between 3m and 5m
@@ -71,12 +73,15 @@ class PadmeProdServer:
             print "*** ERROR *** Long-lived proxy file '%s' not found"%proxy_file
             sys.exit(1)
 
-        # Extract CE endpoint and register it for proxy renewal
+        # Extract CE endpoint and register it to proxy handler for delegation renewal
         r = re.match("^(.*)/.*$",prod_ce)
         if r:
             self.ph.cream_ce_endpoint = r.group(1)
         else:
             print "WARNING Unable to extract CE endpoint from production CE %s"%prod_ce
+
+        # Register delegation id to proxy handler
+        self.ph.delegations.append(self.delegation_id)
 
         # Define absolute path of VOMS proxy file which will be used for this production
         voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
@@ -96,10 +101,15 @@ class PadmeProdServer:
 
         # Create and configure job handlers
         for job_id in job_id_list:
-            self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
+            #self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
+            self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.delegation_id,self.debug))
     
         print "=== Starting Production %s ==="%self.prod_name
     
+        # Create voms proxy and register production delegation to CE
+        self.ph.create_voms_proxy(proxy_file)
+        self.ph.register_delegations()
+
         # Main production loop
         undef_counter = 0
         jobs_success_old = 0
@@ -168,8 +178,8 @@ class PadmeProdServer:
         jobs_fail = 0
         jobs_undef = 0
 
-        # Reset proxy delegations array
-        self.ph.delegations = []
+        ## Reset proxy delegations array
+        #self.ph.delegations = []
     
         print "--- Checking status of production jobs ---"
 
