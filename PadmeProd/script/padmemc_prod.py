@@ -144,6 +144,7 @@ exit 0
             else:
                 raise
 
+        # Here we can parse the full stdout and stderr streams of the job checking for problems
         for fd in ret[0]:
             if fd == p.stdout.fileno():
                 read = p.stdout.readline()

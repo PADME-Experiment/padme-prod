@@ -149,6 +149,7 @@ exit 0
             else:
                 raise
 
+        # Here we can parse the full stdout and stderr streams of the job checking for problems
         for fd in ret[0]:
             if fd == p.stdout.fileno():
                 read = p.stdout.readline()
@@ -156,7 +157,7 @@ exit 0
             elif fd == p.stderr.fileno():
                 read = p.stderr.readline()
                 sys.stderr.write(read)
-                if re.match("^.*\[ERROR\] Server responded with an error",read): run_problems = True
+                if re.match("^.*Error in <TNetXNGFile::Open>: \[ERROR\]",read): run_problems = True
 
         if p.poll() != None: break
 
