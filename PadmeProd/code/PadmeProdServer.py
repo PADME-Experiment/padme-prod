@@ -29,6 +29,8 @@ class PadmeProdServer:
 
         self.prod_id = None
 
+        self.delegation_id = "%s_%s"%(self.prod_name,os.getpid())
+
         self.job_list = []
 
         # Delay between two checks. Interval is flat between 3m and 5m
@@ -71,19 +73,12 @@ class PadmeProdServer:
             print "*** ERROR *** Long-lived proxy file '%s' not found"%proxy_file
             sys.exit(1)
 
-        # Extract CE endpoint and register it for proxy renewal
+        # Extract CE endpoint and register it to proxy handler for delegation renewal
         r = re.match("^(.*)/.*$",prod_ce)
-        if r:
-            self.ph.cream_ce_endpoint = r.group(1)
-        else:
-            print "WARNING Unable to extract CE endpoint from production CE %s"%prod_ce
-
-        # Define absolute path of VOMS proxy file which will be used for this production
-        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
-        # Assign it to the X509_USER_PROXY enivronment variable (used by glite commands)
-        os.environ['X509_USER_PROXY'] = voms_proxy
-        # Pass it to the ProxyHandler
-        self.ph.voms_proxy = voms_proxy
+        if not r:
+            print "*** ERROR *** Unable to extract CE endpoint from production CE %s"%prod_ce
+            sys.exit(1)
+        self.ph.cream_ce_endpoint = r.group(1)
 
         # Define name of control file: if found, this production will cleanly quit
         quit_file = "%s/quit"%prod_dir
@@ -94,12 +89,30 @@ class PadmeProdServer:
             print "*** ERROR *** Number of jobs in DB and in production are different: %s != %s"%(len(job_id_list),prod_njobs)
             sys.exit(1)
 
+        # All checks are good: ready to start real production activities
+        print "=== Starting Production %s ==="%self.prod_name
+
         # Create and configure job handlers
         for job_id in job_id_list:
-            self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
+            #self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
+            self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.delegation_id,self.debug))
     
-        print "=== Starting Production %s ==="%self.prod_name
-    
+        # Define absolute path of VOMS proxy file which will be used for this production and pass it to the proxy handler
+        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
+        if self.debug: print "VOMS proxy for this production: %s"%voms_proxy
+        self.ph.voms_proxy = voms_proxy
+
+        # Assign VOMS proxy file to the X509_USER_PROXY enivronment variable used by glite commands
+        os.environ['X509_USER_PROXY'] = voms_proxy
+        if self.debug: print "Environment variable X509_USER_PROXY set to %s"%os.environ['X509_USER_PROXY']
+
+        # Create voms proxy to be used for this production
+        self.ph.create_voms_proxy(proxy_file)
+
+        # Register delegation id using proxy handler
+        self.ph.delegations.append(self.delegation_id)
+        self.ph.register_delegations()
+
         # Main production loop
         undef_counter = 0
         jobs_success_old = 0
@@ -110,10 +123,12 @@ class PadmeProdServer:
             self.ph.renew_voms_proxy(proxy_file)
     
             # Check quit control file and send quit command to all jobs if found.
-            if os.path.exists(quit_file): self.quit_production()
+            if os.path.exists(quit_file):
+                print "*** Quit file %s found: quitting production ***"%quit_file
+                self.quit_production()
 
             # Call method to check jobs status and handle each job accordingly
-            (jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
+            (jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef) = self.handle_jobs()
 
             # Update database if any new job reached final state
             if ( (jobs_success != jobs_success_old) or (jobs_fail != jobs_fail_old) ):
@@ -123,10 +138,10 @@ class PadmeProdServer:
                 jobs_fail_old = jobs_fail
 
             # Show current production state
-            print "Jobs: active %d success %d fail %d undef %d"%(jobs_active,jobs_success,jobs_fail,jobs_undef)
+            print "Jobs: unsubmitted %d active %d success %d fail %d undef %d"%(jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef)
 
             # If all jobs are in a final state (either success or fail), production is over
-            if jobs_active+jobs_undef == 0:
+            if jobs_created+jobs_active+jobs_undef == 0:
                 print "--- No unfinished jobs left: production is done ---"
                 break
 
@@ -136,7 +151,7 @@ class PadmeProdServer:
             else:
                 undef_counter += 1
                 if undef_counter < 10:
-                    print "WARNING: %d jobs in UNDEF state for %d iteration(s)"%(jobs_undef,undef_counter)
+                    print "  WARNING: %d jobs in UNDEF state for %d iteration(s)"%(jobs_undef,undef_counter)
                 else:
                     print "*** More than 10 consecutive iterations with jobs in UNDEF state: quitting production ***"
                     self.quit_production()
@@ -144,7 +159,7 @@ class PadmeProdServer:
             # Release DB connection while idle
             self.db.close_db()
     
-            # Sleep for a while (use random to avoid coherent checks when multiple runs are active)
+            # Sleep for a while (use random to avoid coherent checks when concurrent productions are active)
             time.sleep(self.prod_check_delay+random.randint(0,self.prod_check_delay_spread+1))
     
         # Production is over: get total events, tag production as done and say bye bye
@@ -160,28 +175,30 @@ class PadmeProdServer:
     
     def handle_jobs(self):
     
+        jobs_created = 0
         jobs_active = 0
         jobs_success = 0
         jobs_fail = 0
         jobs_undef = 0
 
-        # Reset proxy delegations array
-        self.ph.delegations = []
+        ## Reset proxy delegations array
+        #self.ph.delegations = []
     
         print "--- Checking status of production jobs ---"
 
         for job in self.job_list:
 
             status = job.update()
-            if   status == "ACTIVE":     jobs_active  += 1
+            if   status == "CREATED":    jobs_created += 1
+            elif status == "ACTIVE":     jobs_active  += 1
             elif status == "SUCCESSFUL": jobs_success += 1
             elif status == "FAILED":     jobs_fail    += 1
-            elif status == "UNDEF":      jobs_undef += 1
+            elif status == "UNDEF":      jobs_undef   += 1
             else:
                 print "  WARNING ProdJob returned unknown status '%s'"%status
                 jobs_undef += 1
 
-        return (jobs_active,jobs_success,jobs_fail,jobs_undef)
+        return (jobs_created,jobs_active,jobs_success,jobs_fail,jobs_undef)
 
     def quit_production(self):
 

@@ -7,13 +7,9 @@ import subprocess
 import re
 import shlex
 
-#from PadmeMCDB import PadmeMCDB
-#from Logger import Logger
-#from ProxyHandler import ProxyHandler
-
 class ProdJob:
 
-    def __init__(self,job_id,ce,db,ph,debug):
+    def __init__(self,job_id,ce,db,delegation_id,debug):
 
         # Job identifier within the PadmeMCDB database
         self.job_id = job_id
@@ -27,12 +23,15 @@ class ProdJob:
         # Connection to PadmeMCDB database
         self.db = db
 
+        # Name of delegation to use for job submission
+        self.delegation_id = delegation_id
+
         # Get some job info from DB
         self.job_name = self.db.get_job_name(self.job_id)
         self.job_dir = self.db.get_job_dir(self.job_id)
 
-        # ProxyHandler is needed to store the job delegations
-        self.ph = ph
+        ## ProxyHandler is needed to store the job delegations
+        #self.ph = ph
 
         # Debug level
         self.debug = debug
@@ -75,6 +74,7 @@ class ProdJob:
              10: "ABORTED",
              11: "UNKNOWN",
              12: "UNDEF",
+            100: "SUBMIT-FAILED",
             107: "DONE-OK, output problem",
             108: "DONE-FAILED, output problem",
             109: "CANCELLED, output problem",
@@ -83,6 +83,9 @@ class ProdJob:
 
         # Define quit file: if found, job will cleanly quit
         self.quit_file = "%s/quit"%self.job_dir
+
+        if self.debug:
+            print "--- Job %s initialized ---"%self.job_name
 
     def execute_command(self,command):
 
@@ -101,25 +104,30 @@ class ProdJob:
         # 3: Failed
     
         # Check quit control file and quit job if found.
-        if os.path.exists(self.quit_file): self.job_quit = True
+        if os.path.exists(self.quit_file):
+            print "*** Quit file %s found: quitting job ***"%self.quit_file
+            self.job_quit = True
 
-        # If status is 0, job was not submitted yet: do it now
+        # If status is 0, job must be submitted
         if self.job_status == 0:
-            if self.job_quit:
+
+            if self.job_quit or (self.resubmissions >= self.resubmit_max):
+                if self.resubmissions >= self.resubmit_max:
+                    print "*** Resubmission %d exceeds max allowed %d: job tagged as FAILED ***"%(self.resubmissions,self.resubmit_max)
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_CANCELLED")
                 self.job_status = 3
                 self.db.close_job(self.job_id,self.job_status)
                 return "FAILED"
-            if self.submit_job():
+            elif self.submit_job():
                 print "- %-8s %-60s %s"%(self.job_name,self.ce_job_id,"SUBMITTED")
                 self.job_status = 1
                 self.db.set_job_status(self.job_id,self.job_status)
                 return "ACTIVE"
             else:
+                # If submission failed, leave job in CREATED mode and try again next time
+                self.db.set_job_submit_status(self.job_sub_id,100)
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEF","SUBMIT_FAILED")
-                self.job_status = 3
-                self.db.close_job(self.job_id,self.job_status)
-                return "FAILED"
+                return "CREATED"
 
         # Get previous status of job submission from DB
         (job_sub_status,worker_node,wn_user,description) = self.db.get_job_submit_info(self.job_sub_id)
@@ -148,9 +156,6 @@ class ProdJob:
             (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status()
             job_location = "%s@%s"%(job_local_user,job_worker_node)
             print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,job_ce_status,job_location,job_description)
-
-            # Register job delegation for proxy renewals
-            self.ph.delegations.append(job_delegation)
 
             # Check current job status and update DB if it changed
             if job_ce_status == "REGISTERED" or job_ce_status == "PENDING" or job_ce_status == "IDLE" or job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING" or job_ce_status == "HELD":
@@ -183,12 +188,12 @@ class ProdJob:
                     self.db.close_job(self.job_id,self.job_status)
                     return "SUCCESSFUL"
 
-                if job_exit_code != "0":
+                if job_exit_code == "0":
+                    print "  WARNING job is DONE_OK and RC is 0 but output retrieval failed"
+                    self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
+                else:
                     print "  WARNING job is DONE_OK but with RC %s"%job_exit_code
                     self.db.close_job_submit(self.job_sub_id,207,job_description,job_exit_code)
-                else:
-                    print "  WARNING job is DONE_OK but output retrieval failed"
-                    self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
 
             elif job_ce_status == "DONE-FAILED":
 
@@ -207,6 +212,7 @@ class ProdJob:
             elif job_ce_status == "ABORTED":
 
                 self.db.close_job_submit(self.job_sub_id,10,job_description,job_exit_code)
+                self.purge_job()
 
             elif job_ce_status == "UNKNOWN":
 
@@ -219,36 +225,22 @@ class ProdJob:
             else:
 
                 if job_sub_status != 12:
-                    print "  WARNING unrecognized job status '%s' returned by glite-ce-job-status"%job_ce_status
+                    if job_ce_status != "UNDEF":
+                        print "  WARNING unrecognized job status '%s' returned by glite-ce-job-status"%job_ce_status
                     self.db.set_job_submit_status(self.job_sub_id,12)
                 if self.job_quit: self.cancel_job()
                 return "UNDEF"
 
-            # If we get here, the job finished with a problem: see if we can resubmit it
-
-            self.resubmissions += 1
-            if self.job_quit or (self.resubmissions >= self.resubmit_max):
-
-                # Production was cancelled or job was resubmitted too many times: tag job as failed
-                if self.job_quit:
-                    print "  WARNING - job %s is in quit mode and will not be resubmitted"%self.job_name
-                if self.resubmissions >= self.resubmit_max:
-                    print "  WARNING - job %s failed %d times and will not be resubmitted"%(self.job_name,self.resubmissions)
+            # If we are quitting, tag job as FAILED
+            if self.job_quit:
                 self.job_status = 3
-                self.db.close_job(self.job_id,self.job_status)
+                self.db.set_job_status(self.job_id,self.job_status)
                 return "FAILED"
-
-            elif self.submit_job():
-
-                print "- %s %s RESUBMITTED"%(self.job_name,self.ce_job_id)
-                return "ACTIVE"
-
-            else:
-
-                print " WARNING - unable to resubmit job %s: tagging it as failed"%self.job_name
-                self.job_status = 3
-                self.db.close_job(self.job_id,self.job_status)
-                return "FAILED"
+        
+            # Otherwise tag job as CREATED (i.e. resubmittable)
+            self.job_status = 0
+            self.db.set_job_status(self.job_id,self.job_status)
+            return "CREATED"
     
     def submit_job(self):
     
@@ -258,11 +250,12 @@ class ProdJob:
         # Go to job working directory
         os.chdir(self.job_dir)
     
-        # Create new job submission in DB
+        # Create new job submission in DB and count it
         self.job_sub_id = self.db.create_job_submit(self.job_id,self.resubmissions)
+        self.resubmissions += 1
 
-        # Command to submit job (might need revision for CNAF job submissions)
-        submit_cmd = "glite-ce-job-submit --autm-delegation --resource %s job.jdl"%self.ce
+        # Command to submit job
+        submit_cmd = "glite-ce-job-submit --delegationId %s --resource %s job.jdl"%(self.delegation_id,self.ce)
 
         # Handle job submission trapping errors and allowing for multiple retries
         submits = 0

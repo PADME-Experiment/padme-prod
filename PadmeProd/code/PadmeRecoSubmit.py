@@ -95,7 +95,10 @@ def add_run_list(run_list):
 
     # Read file and add runs to list
     with open(run_list,"r") as rl:
-        for run in rl: PROD_RUN_LIST.append(run.strip())
+        for run in rl:
+            # Skip empty and comment lines
+            if re.match("^\s*$",run) or re.match("^\s*#.*$",run): continue
+            PROD_RUN_LIST.append(run.strip())
 
 def main(argv):
 

@@ -61,11 +61,21 @@ class ProxyHandler:
         for line in self.run_command(init_cmd):
             if self.debug: print line.rstrip()
 
+    def register_delegations(self):
+
+        # Register delegations using current VOMS proxy (glite commands automatically use X509_USER_PROXY)
+        if self.cream_ce_endpoint and self.delegations:
+            if self.debug: print "- Registering proxy delegations using current VOMS proxy"
+            for delegation in self.delegations:
+                cmd = "glite-ce-delegate-proxy --endpoint %s %s"%(self.cream_ce_endpoint,delegation)
+                for line in self.run_command(cmd):
+                    if self.debug: print line.rstrip()
+
     def renew_delegations(self):
 
-        # Renew delegations to all jobs using new VOMS proxy (glite commands automatically use X509_USER_PROXY)
+        # Renew delegations using current VOMS proxy (glite commands automatically use X509_USER_PROXY)
         if self.cream_ce_endpoint and self.delegations:
-            if self.debug: print "- Renewing proxy delegations using new VOMS proxy"
+            if self.debug: print "- Renewing proxy delegations using current VOMS proxy"
             cmd = "glite-ce-proxy-renew --endpoint %s %s"%(self.cream_ce_endpoint,' '.join(self.delegations))
             for line in self.run_command(cmd):
                 if self.debug: print line.rstrip()

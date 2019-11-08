@@ -68,7 +68,10 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO reco_prod (production_id,description,run,reco_version) VALUES (%s,%s,%s,%s)""",(prod_id,description,run,reco_version))
+        try:
+            c.execute("""INSERT INTO reco_prod (production_id,description,run,reco_version) VALUES (%s,%s,%s,%s)""",(prod_id,description,run,reco_version))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
         return prod_id
@@ -79,17 +82,25 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO mc_prod (production_id,description,user_req,n_events_req,mc_version) VALUES (%s,%s,%s,%s,%s)""",(prod_id,description,user_req,n_events_req,mc_version))
+        try:
+            c.execute("""INSERT INTO mc_prod (production_id,description,user_req,n_events_req,mc_version) VALUES (%s,%s,%s,%s,%s)""",(prod_id,description,user_req,n_events_req,mc_version))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
         return prod_id
 
     def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 
+        prod_id = 0
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs,n_jobs_ok,n_jobs_fail) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,0)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
-        prod_id = c.lastrowid
+        try:
+            c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs,n_jobs_ok,n_jobs_fail) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,0)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
+        else:
+            prod_id = c.lastrowid
         self.conn.commit()
         return prod_id
 
@@ -97,7 +108,10 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_jobs_fail = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_jobs_fail,n_events,prod_id))
+        try:
+            c.execute("""UPDATE production SET time_complete = %s, n_jobs_ok = %s, n_jobs_fail = %s, n_events = %s WHERE id = %s""",(self.__now__(),n_jobs_ok,n_jobs_fail,n_events,prod_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def get_prod_type(self,prod_id):
@@ -122,14 +136,20 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE production SET n_jobs_ok = %s, n_jobs_fail = %s WHERE id = %s""",(jobs_ok,jobs_fail,prod_id))
+        try:
+            c.execute("""UPDATE production SET n_jobs_ok = %s, n_jobs_fail = %s WHERE id = %s""",(jobs_ok,jobs_fail,prod_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_prod_n_events(self,prod_id,n_events):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE production SET n_events = %s WHERE id = %s""",(n_events,prod_id))
+        try:
+            c.execute("""UPDATE production SET n_events = %s WHERE id = %s""",(n_events,prod_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def get_prod_total_events(self,prod_id):
@@ -192,14 +212,20 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO job (production_id,name,job_dir,configuration,input_list,random,status,time_create) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(prod_id,name,job_dir,configuration,input_list,random,status,self.__now__()))
+        try:
+            c.execute("""INSERT INTO job (production_id,name,job_dir,configuration,input_list,random,status,time_create) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",(prod_id,name,job_dir,configuration,input_list,random,status,self.__now__()))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def close_job(self,job_id,status):
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_id))
+        try:
+            c.execute("""UPDATE job SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def get_job_id(self,prod_id,name):
@@ -259,10 +285,15 @@ class PadmeMCDB:
         status = 0
 
         # Create new job submission
+        job_sub_id = 0
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""INSERT INTO job_submit (job_id,submit_index,status,time_submit) VALUES (%s,%s,%s,%s)""",(job_id,job_sub_index,status,self.__now__()))
-        job_sub_id = c.lastrowid
+        try:
+            c.execute("""INSERT INTO job_submit (job_id,submit_index,status,time_submit) VALUES (%s,%s,%s,%s)""",(job_id,job_sub_index,status,self.__now__()))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
+        else:
+            job_sub_id = c.lastrowid
         self.conn.commit()
 
         # Return job submission id
@@ -272,11 +303,20 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET status = %s, time_complete = %s WHERE id = %s""",(status,self.__now__(),job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         if description:
-            c.execute("""UPDATE job_submit SET description = %s WHERE id = %s""",(description,job_sub_id))
+            try:
+                c.execute("""UPDATE job_submit SET description = %s WHERE id = %s""",(description,job_sub_id))
+            except MySQLdb.Error as e:
+                print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         if exit_code:
-            c.execute("""UPDATE job_submit SET exit_code = %s WHERE id = %s""",(exit_code,job_sub_id))
+            try:
+                c.execute("""UPDATE job_submit SET exit_code = %s WHERE id = %s""",(exit_code,job_sub_id))
+            except MySQLdb.Error as e:
+                print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def get_job_submit_info(self,job_sub_id):
@@ -304,9 +344,8 @@ class PadmeMCDB:
         c = self.conn.cursor()
         try:
             c.execute("""INSERT INTO file (job_id,name,type,seq_index,n_events,size,adler32) VALUES (%s,%s,%s,%s,%s,%s,%s)""",(job_id,file_name,file_type,seq_n,n_events,size,adler32))
-        except:
-            print "MySQL command",c._last_executed
-            sys.exit(2)
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_submitted(self,job_sub_id,ce_job_id):
@@ -316,79 +355,118 @@ class PadmeMCDB:
 
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET status = %s, ce_job_id = %s, time_submit = %s WHERE id = %s""",(status,ce_job_id,self.__now__(),job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET status = %s, ce_job_id = %s, time_submit = %s WHERE id = %s""",(status,ce_job_id,self.__now__(),job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_status(self,job_id,status):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET status = %s WHERE id = %s""",(status,job_id))
+        try:
+            c.execute("""UPDATE job SET status = %s WHERE id = %s""",(status,job_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_submit_status(self,job_sub_id,status):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET status = %s WHERE id = %s""",(status,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET status = %s WHERE id = %s""",(status,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_time_complete(self,job_id,time_complete):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET time_complete = %s WHERE id = %s""",(time_complete,job_id))
+        try:
+            c.execute("""UPDATE job SET time_complete = %s WHERE id = %s""",(time_complete,job_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_time_start(self,job_sub_id,time_start):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET time_job_start = %s WHERE id = %s""",(time_start,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET time_job_start = %s WHERE id = %s""",(time_start,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_time_end(self,job_sub_id,time_end):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET time_job_end = %s WHERE id = %s""",(time_end,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET time_job_end = %s WHERE id = %s""",(time_end,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_run_time_start(self,job_sub_id,time_start):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET time_run_start = %s WHERE id = %s""",(time_start,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET time_run_start = %s WHERE id = %s""",(time_start,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_run_time_end(self,job_sub_id,time_end):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET time_run_end = %s WHERE id = %s""",(time_end,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET time_run_end = %s WHERE id = %s""",(time_end,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_worker_node(self,job_sub_id,worker_node):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET worker_node = %s WHERE id = %s""",(worker_node,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET worker_node = %s WHERE id = %s""",(worker_node,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_wn_user(self,job_sub_id,wn_user):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET wn_user = %s WHERE id = %s""",(wn_user,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET wn_user = %s WHERE id = %s""",(wn_user,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_wn_dir(self,job_sub_id,wn_dir):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job_submit SET wn_dir = %s WHERE id = %s""",(wn_dir,job_sub_id))
+        try:
+            c.execute("""UPDATE job_submit SET wn_dir = %s WHERE id = %s""",(wn_dir,job_sub_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_n_files(self,job_id,n_files):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET n_files = %s WHERE id = %s""",(n_files,job_id))
+        try:
+            c.execute("""UPDATE job SET n_files = %s WHERE id = %s""",(n_files,job_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def set_job_n_events(self,job_id,n_events):
         self.check_db()
         c = self.conn.cursor()
-        c.execute("""UPDATE job SET n_events = %s WHERE id = %s""",(n_events,job_id))
+        try:
+            c.execute("""UPDATE job SET n_events = %s WHERE id = %s""",(n_events,job_id))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
     def __now__(self):
