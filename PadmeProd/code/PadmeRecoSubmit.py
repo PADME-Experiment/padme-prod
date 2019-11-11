@@ -51,7 +51,7 @@ PROD_CE_PORT_DEFAULT = "8443"
 # Define global defaults
 PROD_DEBUG = 0
 PROD_FILES_PER_JOB = 100
-PROD_RECO_VERSION = "develop"
+PROD_RECO_VERSION = ""
 PROD_RUN_SITE = "LNF"
 PROD_STORAGE_SITE = "LNF"
 PROD_SUBMIT_DELAY = 60
@@ -63,10 +63,10 @@ PROD_RUN_LIST = []
 
 def print_help():
 
-    print "%s [-L <run_list_file>] [-r <run>] [-j <files_per_job>] [-v <version>] [-s <submission_site>] [-Q <CE_queue>] [-P <CE_port>] [-S <source_uri>] [-d <storage_site>] [-D <submit_delay>] [-V] [-h]"%SCRIPT_NAME
+    print "%s [-L <run_list_file>] [-r <run>] -v <version> [-j <files_per_job>] [-s <submission_site>] [-Q <CE_queue>] [-P <CE_port>] [-S <source_uri>] [-d <storage_site>] [-D <submit_delay>] [-V] [-h]"%SCRIPT_NAME
     print "  -L <run_list_file>\tfile with list of runs to process"
     print "  -r <run_name>\t\tname of run to process"
-    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: %s"%PROD_RECO_VERSION
+    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS."
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE_LIST.keys()),PROD_RUN_SITE)
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT_DEFAULT
@@ -120,7 +120,8 @@ def main(argv):
 
     try:
         opts,args = getopt.getopt(argv,"hVL:r:j:v:s:P:Q:d:D:S:",[])
-    except getopt.GetoptError:
+    except getopt.GetoptError as e:
+        print "Option error: %s"%str(e)
         print_help()
         sys.exit(2)
 
@@ -186,7 +187,12 @@ def main(argv):
 
     # Check if at least one run was specified
     if n_runs == 0:
-        print "*** ERROR *** No runs specified"
+        print "*** ERROR *** No runs specified."
+        print_help()
+        sys.exit(2)
+
+    if not PROD_RECO_VERSION:
+        print "*** ERROR *** No software version specified."
         print_help()
         sys.exit(2)
 

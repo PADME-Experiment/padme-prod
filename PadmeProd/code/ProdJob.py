@@ -30,9 +30,6 @@ class ProdJob:
         self.job_name = self.db.get_job_name(self.job_id)
         self.job_dir = self.db.get_job_dir(self.job_id)
 
-        ## ProxyHandler is needed to store the job delegations
-        #self.ph = ph
-
         # Debug level
         self.debug = debug
 

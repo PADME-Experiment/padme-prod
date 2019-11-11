@@ -11,6 +11,7 @@ mysql --table -h percona.lnf.infn.it -P 3306 -u padmeMCDB -p$PADME_MCDB_PASSWD P
 SELECT
   p.name                             AS production,
   j.name                             AS job,
+  j.random                           AS seeds,
   CASE j.status WHEN 0 THEN '0 Created'
                 WHEN 1 THEN '1 Active'
                 WHEN 2 THEN '2 Success'
