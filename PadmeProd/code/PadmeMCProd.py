@@ -31,7 +31,8 @@ PH = ProxyHandler()
 # SRMs to access PADME area on the LNF and CNAF storage systems
 PADME_SRM_URI = {
     "LNF":  "srm://atlasse.lnf.infn.it:8446/srm/managerv2?SFN=/dpm/lnf.infn.it/home/vo.padme.org",
-    "CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape"
+    #"CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape"
+    "CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padme"
 }
 
 # List of available submission sites and corresponding default CE nodes
@@ -57,14 +58,14 @@ PROD_STORAGE_SITE = "CNAF"
 PROD_MC_VERSION = ""
 PROD_PROXY_FILE = ""
 PROD_DEBUG = 0
-PROD_DESCRIPTION = "TEST"
+PROD_DESCRIPTION_FILE = ""
 PROD_USER_REQ = "Unknown"
 PROD_NEVENTS_REQ = 0
 PROD_RANDOM_LIST = ""
 
 def print_help():
 
-    print "PadmeMCProd -n <prod_name> -j <number_of_jobs> -v <version> [-m <macro_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-U <user>] [-N <events>] [-R <seed_list>] [-V] [-h]"
+    print "PadmeMCProd -n <prod_name> -j <number_of_jobs> -v <version> [-m <macro_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <desc_file>] [-U <user>] [-N <events>] [-R <seed_list>] [-V] [-h]"
     print "  -n <prod_name>\tName for the production"
     print "  -j <number_of_jobs>\tNumber of production jobs to submit. Must be >0 and <=1000"
     print "  -v <version>\t\tVersion of PadmeMC to use for production. Must be installed on CVMFS."
@@ -75,7 +76,7 @@ def print_help():
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
     print "  -d <storage_site>\tSite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
     print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
-    print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
+    print "  -D <desc_file>\tFile containing a text describing the production (to be stored in the DB). Default: description/<prod_name>.txt"
     print "  -U <user>\t\tName of user who requested the production (to be stored in the DB). '%s' if not given."%PROD_USER_REQ
     print "  -N <events>\t\tTotal number of events requested by user (to be stored in the DB). %d if not given."%PROD_NEVENTS_REQ
     print "  -R <seed_list>\tFile with list of random seed pairs to use for jobs. Default: generate automatically."
@@ -98,7 +99,7 @@ def main(argv):
     global PROD_MC_VERSION
     global PROD_PROXY_FILE
     global PROD_DEBUG
-    global PROD_DESCRIPTION
+    global PROD_DESCRIPTION_FILE
     global PROD_USER_REQ
     global PROD_NEVENTS_REQ
     global PROD_RANDOM_LIST
@@ -131,7 +132,7 @@ def main(argv):
         elif opt == '-p':
             PROD_PROXY_FILE = arg
         elif opt == '-D':
-            PROD_DESCRIPTION = arg
+            PROD_DESCRIPTION_FILE = arg
         elif opt == '-U':
             PROD_USER_REQ = arg
         elif opt == '-R':
@@ -210,7 +211,7 @@ def main(argv):
 
     # If storage directory was not specified, use default
     if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_MC_VERSION,PROD_NAME)
+        PROD_STORAGE_DIR = "/mc/%s/%s/sim"%(PROD_MC_VERSION,PROD_NAME)
 
     # If production directory was not specified, use default
     if PROD_DIR == "":
@@ -221,6 +222,15 @@ def main(argv):
             print "*** ERROR *** '%s' exists but is not a directory"%version_dir
             sys.exit(2)
         PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
+
+    # If description file was not given, use default
+    if not PROD_DESCRIPTION_FILE: PROD_DESCRIPTION_FILE = "description/%s.txt"%PROD_NAME
+
+    # Read file with a description of the production
+    if not os.path.isfile(PROD_DESCRIPTION_FILE):
+        print "*** ERROR *** Description file '%s' does not exist"%PROD_DESCRIPTION_FILE
+        sys.exit(2)
+    with open(PROD_DESCRIPTION_FILE,"r") as df: PROD_DESCRIPTION = df.read()
 
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
@@ -318,15 +328,18 @@ def main(argv):
     # This is needed to create the storage dir on the SRM server
     PH.renew_voms_proxy(JOB_PROXY_FILE)
 
+    # Create production directory in the storage SRM
+    print "- Creating production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
+    gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
+    if PROD_DEBUG: print ">",gfal_mkdir_cmd
+    if subprocess.call(shlex.split(gfal_mkdir_cmd)):
+        print "*** ERROR *** unable to create production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
+        shutil.rmtree(PROD_DIR)
+        sys.exit(2)
+
     # Create new production in DB
     print "- Creating new production in DB"
     prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,PROD_NJOBS)
-
-    # Create production directory in the storage SRM
-    print "- Creating dir %s in %s"%(PROD_STORAGE_DIR,PROD_SRM)
-    gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
-    if PROD_DEBUG: print ">",gfal_mkdir_cmd
-    rc = subprocess.call(shlex.split(gfal_mkdir_cmd))
 
     # Create job structures
     print "- Creating directory structure for production jobs"

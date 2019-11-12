@@ -82,11 +82,6 @@ def print_help():
     print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
 
-#def run_command(command):
-#    if PROD_DEBUG: print "> %s"%command
-#    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-#    return iter(p.stdout.readline,b'')
-
 def execute_command(command):
     if PROD_DEBUG: print "> %s"%command
     p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -105,13 +100,6 @@ def get_run_file_list(run):
 
     run_file_list = []
     run_dir = "%s/daq/%s/rawdata/%s"%(PROD_SOURCE_URI,PROD_YEAR,run)
-
-    #for line in run_command("gfal-ls %s"%run_dir):
-    #    if PROD_DEBUG >= 2: print line.rstrip()
-    #    if re.match("^gfal-ls error: ",line):
-    #        print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
-    #        sys.exit(2)
-    #    run_file_list.append(line.rstrip())
 
     tries = 0
     cmd = "gfal-ls %s"%run_dir
