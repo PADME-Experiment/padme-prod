@@ -58,7 +58,7 @@ PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
 PROD_RUN_SITE = "LNF"
 PROD_STORAGE_SITE = "LNF"
-PROD_RECO_VERSION = "develop"
+PROD_RECO_VERSION = ""
 PROD_PROXY_FILE = ""
 PROD_YEAR = ""
 PROD_DEBUG = 0
@@ -66,10 +66,10 @@ PROD_DESCRIPTION = "TEST"
 
 def print_help():
 
-    print "PadmeRecoProd -r <run_name> [-y <year>] [-j <files_per_job>] [-v <version>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-V] [-h]"
+    print "PadmeRecoProd -r <run_name> -v <version> [-y <year>] [-j <files_per_job>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-V] [-h]"
     print "  -r <run_name>\t\tname of the run to process"
-    print "  -y <year>\t\t\tyear of run. N.B. used only if run name is not self-documenting"
-    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS. Default: %s"%PROD_RECO_VERSION
+    print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS."
+    print "  -y <year>\t\tyear of run. N.B. used only if run name is not self-documenting"
     print "  -n <prod_name>\tname for the production. Default: <run_name>_<version>"
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
@@ -81,11 +81,6 @@ def print_help():
     print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
     print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
     print "  -V\t\t\tenable debug mode. Can be repeated to increase verbosity"
-
-#def run_command(command):
-#    if PROD_DEBUG: print "> %s"%command
-#    p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-#    return iter(p.stdout.readline,b'')
 
 def execute_command(command):
     if PROD_DEBUG: print "> %s"%command
@@ -105,13 +100,6 @@ def get_run_file_list(run):
 
     run_file_list = []
     run_dir = "%s/daq/%s/rawdata/%s"%(PROD_SOURCE_URI,PROD_YEAR,run)
-
-    #for line in run_command("gfal-ls %s"%run_dir):
-    #    if PROD_DEBUG >= 2: print line.rstrip()
-    #    if re.match("^gfal-ls error: ",line):
-    #        print "***ERROR*** gfal-ls returned error status while retrieving file list from run dir %s from LNF"%run_dir
-    #        sys.exit(2)
-    #    run_file_list.append(line.rstrip())
 
     tries = 0
     cmd = "gfal-ls %s"%run_dir
@@ -159,7 +147,8 @@ def main(argv):
 
     try:
         opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:S:C:P:Q:v:p:D:",[])
-    except getopt.GetoptError:
+    except getopt.GetoptError as e:
+        print "Option error: %s"%str(e)
         print_help()
         sys.exit(2)
 
@@ -211,8 +200,13 @@ def main(argv):
                 print_help()
                 sys.exit(2)
 
-    if PROD_RUN_NAME == "":
+    if not PROD_RUN_NAME:
         print "*** ERROR *** No run name specified."
+        print_help()
+        sys.exit(2)
+
+    if not PROD_RECO_VERSION:
+        print "*** ERROR *** No software version specified."
         print_help()
         sys.exit(2)
 
@@ -406,10 +400,11 @@ def main(argv):
             jf.write("OutputSandboxBaseDestURI=\"gsiftp://localhost\";\n")
             jf.write("]\n")
 
-        # Create job entry in DB and register job
+        # Create job entry in DB and register job (jobCfg and jobSeeds are only used in MC jobs)
         jobCfg = ""
         with open(jobListFile,"r") as jlf: jobList = jlf.read()
-        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList)
+        jobSeeds = ""
+        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList,jobSeeds)
 
     # From now on we do not need the DB anymore: close connection
     DB.close_db()

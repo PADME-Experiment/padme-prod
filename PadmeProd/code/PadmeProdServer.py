@@ -94,7 +94,6 @@ class PadmeProdServer:
 
         # Create and configure job handlers
         for job_id in job_id_list:
-            #self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.ph,self.debug))
             self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.delegation_id,self.debug))
     
         # Define absolute path of VOMS proxy file which will be used for this production and pass it to the proxy handler

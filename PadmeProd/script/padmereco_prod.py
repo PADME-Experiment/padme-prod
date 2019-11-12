@@ -118,21 +118,10 @@ echo "--- Ending PADMERECO production ---"
 exit 0
 """%(padmereco_init_file,input_list,output_file)
     with open("job.sh","w") as sf: sf.write(script)
-    #sf = open("job.sh","w")
-    #sf.write("#!/bin/bash\n")
-    #sf.write("echo \"--- Starting PADMERECO production ---\"\n")
-    #sf.write(". %s\n"%padmereco_init_file)
-    #sf.write("echo \"PADME = $PADME\"\n")
-    #sf.write("echo \"PADMERECO_EXE = $PADMERECO_EXE\"\n")
-    #sf.write("echo \"LD_LIBRARY_PATH = $LD_LIBRARY_PATH\"\n")
-    #sf.write("$PADMERECO_EXE -l %s -o %s -n 0\n"%(input_list,output_file))
-    #sf.write("pwd; ls -l\n")
-    #sf.close()
 
     # Run job script sending its output/error to stdout/stderr
     print "Program starting at %s (UTC)"%now_str()
     job_cmd = "/bin/bash job.sh"
-    #rc_reco = subprocess.call(job_cmd.split())
     p = subprocess.Popen(shlex.split(job_cmd), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     run_problems = False

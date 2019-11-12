@@ -30,9 +30,6 @@ class ProdJob:
         self.job_name = self.db.get_job_name(self.job_id)
         self.job_dir = self.db.get_job_dir(self.job_id)
 
-        ## ProxyHandler is needed to store the job delegations
-        #self.ph = ph
-
         # Debug level
         self.debug = debug
 
@@ -182,7 +179,12 @@ class ProdJob:
 
             elif job_ce_status == "DONE-OK":
 
-                if self.finalize_job() and (job_exit_code == "0"):
+                (finalize_ok,sh_file,out_file,err_file) = self.finalize_job()
+                if finalize_ok and (job_exit_code == "0"):
+                    if not self.parse_out_file(out_file):
+                        print "  WARNING problems while parsing output file %s"%out_file
+                    if not self.parse_err_file(err_file):
+                        print "  WARNING problems while parsing error file %s"%err_file
                     self.db.close_job_submit(self.job_sub_id,7,job_description,job_exit_code)
                     self.job_status = 2
                     self.db.close_job(self.job_id,self.job_status)
@@ -197,14 +199,16 @@ class ProdJob:
 
             elif job_ce_status == "DONE-FAILED":
 
-                if self.finalize_job():
+                (finalize_ok,sh_file,out_file,err_file) = self.finalize_job()
+                if finalize_ok:
                     self.db.close_job_submit(self.job_sub_id,8,job_description,job_exit_code)
                 else:
                     self.db.close_job_submit(self.job_sub_id,108,job_description,job_exit_code)
 
             elif job_ce_status == "CANCELLED":
 
-                if self.finalize_job():
+                (finalize_ok,sh_file,out_file,err_file) = self.finalize_job()
+                if finalize_ok:
                     self.db.close_job_submit(self.job_sub_id,9,job_description,job_exit_code)
                 else:
                     self.db.close_job_submit(self.job_sub_id,109,job_description,job_exit_code)
@@ -366,7 +370,7 @@ class ProdJob:
             if retries >= self.retries_max:
                 print "  WARNING unable to retrieve output files. Retried %d times"%retries
                 os.chdir(main_dir)
-                return False
+                return (False,"","","")
 
             # Wait a bit before retrying
             time.sleep(self.retries_delay)
@@ -378,7 +382,7 @@ class ProdJob:
         if not os.path.isdir(out_dir):
             print "  WARNING Job output dir %s not found"%out_dir
             os.chdir(main_dir)
-            return False
+            return (False,"","","")
 
         # Rename output dir with submission name
         sub_dir = "submit_%03d"%self.db.get_job_submit_index(self.job_sub_id)
@@ -387,27 +391,26 @@ class ProdJob:
         except:
             print "  WARNING Unable to rename directory %s to %s"%(out_dir,sub_dir)
             os.chdir(main_dir)
-            return False
+            return (False,"","","")
+
+        # Go back to top directory
+        os.chdir(main_dir)
 
         output_ok = True
 
-        # Check if all output files are there and parse job output and error files.
+        # Check if all output files are there
 
-        out_file = "%s/job.out"%sub_dir
-        if os.path.exists(out_file):
-            self.parse_out_file(out_file)
-        else:
+        out_file = "%s/%s/job.out"%(self.job_dir,sub_dir)
+        if not os.path.exists(out_file):
             output_ok = False
             print "  WARNING File %s not found"%out_file
 
-        err_file = "%s/job.err"%sub_dir
-        if os.path.exists(err_file):
-            self.parse_err_file(err_file)
-        else:
+        err_file = "%s/%s/job.err"%(self.job_dir,sub_dir)
+        if not os.path.exists(err_file):
             output_ok = False
             print "  WARNING File %s not found"%err_file
     
-        sh_file  = "%s/job.sh"%sub_dir
+        sh_file  = "%s/%s/job.sh"%(self.job_dir,sub_dir)
         if not os.path.exists(sh_file):
             output_ok = False
             print "  WARNING File %s not found"%sh_file
@@ -421,7 +424,7 @@ class ProdJob:
         # Go back to top directory
         os.chdir(main_dir)
     
-        return output_ok
+        return (output_ok,sh_file,out_file,err_file)
 
     def retrieve_job_output(self):
 
@@ -591,6 +594,8 @@ class ProdJob:
                 print "\t%s file %s with size %s adler32 %s"%(file_type,file_name,file_size,file_adler32)
                 self.db.create_job_file(self.job_id,file_name,file_type,0,0,file_size,file_adler32)
 
+        return True
+
     def parse_err_file(self,err_file):
         # Will add some activity when standard error patterns will be defined
-        pass
+        return True

@@ -202,10 +202,7 @@ class PadmeMCDB:
         for j in res: job_list.append(j[0])
         return job_list    
 
-    def create_job(self,prod_id,name,job_dir,configuration,input_list):
-
-        # Random job configuration is not handled yet
-        random = ""
+    def create_job(self,prod_id,name,job_dir,configuration,input_list,random):
 
         # Jobs are created in idle status
         status = 0

@@ -10,6 +10,7 @@ import shlex
 import re
 import daemon
 import daemon.pidfile
+import random
 
 from PadmeProdServer import PadmeProdServer
 from PadmeMCDB import PadmeMCDB
@@ -30,7 +31,8 @@ PH = ProxyHandler()
 # SRMs to access PADME area on the LNF and CNAF storage systems
 PADME_SRM_URI = {
     "LNF":  "srm://atlasse.lnf.infn.it:8446/srm/managerv2?SFN=/dpm/lnf.infn.it/home/vo.padme.org",
-    "CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape"
+    #"CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape"
+    "CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padme"
 }
 
 # List of available submission sites and corresponding default CE nodes
@@ -44,7 +46,7 @@ PADME_CE_NODE = {
 PROD_NAME = ""
 PROD_NJOBS = 0
 PROD_NJOBS_MAX = 1000
-PROD_CONFIG_FILE = ""
+PROD_MACRO_FILE = ""
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
 PROD_SCRIPT = "%s/PadmeProd/script/padmemc_prod.py"%PADME_PROD
@@ -53,29 +55,31 @@ PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
 PROD_RUN_SITE = "LNF"
 PROD_STORAGE_SITE = "CNAF"
-PROD_MC_VERSION = "develop"
+PROD_MC_VERSION = ""
 PROD_PROXY_FILE = ""
 PROD_DEBUG = 0
-PROD_DESCRIPTION = "TEST"
+PROD_DESCRIPTION_FILE = ""
 PROD_USER_REQ = "Unknown"
 PROD_NEVENTS_REQ = 0
+PROD_RANDOM_LIST = ""
 
 def print_help():
 
-    print "PadmeMCProd -n <prod_name> -j <number_of_jobs> [-v <padmemc_version>] [-c <config_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-D <description>] [-U <user>] [-N <events>] [-h]"
+    print "PadmeMCProd -n <prod_name> -j <number_of_jobs> -v <version> [-m <macro_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <desc_file>] [-U <user>] [-N <events>] [-R <seed_list>] [-V] [-h]"
     print "  -n <prod_name>\tName for the production"
     print "  -j <number_of_jobs>\tNumber of production jobs to submit. Must be >0 and <=1000"
-    print "  -v <version>\t\tVersion of PadmeMC to use for production. Must be installed on CVMFS. Default: %s"%PROD_MC_VERSION
-    print "  -c <config_file>\tConfiguration file to use. Default: cfg/<prod_name>.cfg"
+    print "  -v <version>\t\tVersion of PadmeMC to use for production. Must be installed on CVMFS."
+    print "  -m <macro_file>\tMacro file with G4 cards to use. Default: macro/<prod_name>.mac"
     print "  -s <submission_site>\tSite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
     print "  -d <storage_site>\tSite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
     print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
-    print "  -D <description>\tProduction description (to be stored in the DB). '%s' if not given."%PROD_DESCRIPTION
+    print "  -D <desc_file>\tFile containing a text describing the production (to be stored in the DB). Default: description/<prod_name>.txt"
     print "  -U <user>\t\tName of user who requested the production (to be stored in the DB). '%s' if not given."%PROD_USER_REQ
     print "  -N <events>\t\tTotal number of events requested by user (to be stored in the DB). %d if not given."%PROD_NEVENTS_REQ
+    print "  -R <seed_list>\tFile with list of random seed pairs to use for jobs. Default: generate automatically."
     print "  -V\t\t\tEnable debug mode. Can be repeated to increase verbosity"
 
 def main(argv):
@@ -83,7 +87,7 @@ def main(argv):
     # Declare that here we can possibly modify these global variables
     global PROD_NAME
     global PROD_NJOBS
-    global PROD_CONFIG_FILE
+    global PROD_MACRO_FILE
     global PROD_STORAGE_DIR
     global PROD_DIR
     global PROD_SCRIPT
@@ -95,13 +99,15 @@ def main(argv):
     global PROD_MC_VERSION
     global PROD_PROXY_FILE
     global PROD_DEBUG
-    global PROD_DESCRIPTION
+    global PROD_DESCRIPTION_FILE
     global PROD_USER_REQ
     global PROD_NEVENTS_REQ
+    global PROD_RANDOM_LIST
 
     try:
-        opts,args = getopt.getopt(argv,"hVn:j:v:c:s:C:P:Q:d:p:D:U:N:",[])
-    except getopt.GetoptError:
+        opts,args = getopt.getopt(argv,"hVn:j:v:m:s:C:P:Q:d:p:D:U:N:R:",[])
+    except getopt.GetoptError as e:
+        print "Option error: %s"%str(e)
         print_help()
         sys.exit(2)
 
@@ -113,8 +119,8 @@ def main(argv):
             PROD_DEBUG += 1
         elif opt == '-n':
             PROD_NAME = arg
-        elif opt == '-c':
-            PROD_CONFIG_FILE = arg
+        elif opt == '-m':
+            PROD_MACRO_FILE = arg
         elif opt == '-v':
             PROD_MC_VERSION = arg
         elif opt == '-C':
@@ -126,9 +132,11 @@ def main(argv):
         elif opt == '-p':
             PROD_PROXY_FILE = arg
         elif opt == '-D':
-            PROD_DESCRIPTION = arg
+            PROD_DESCRIPTION_FILE = arg
         elif opt == '-U':
             PROD_USER_REQ = arg
+        elif opt == '-R':
+            PROD_RANDOM_LIST = arg
         elif opt == '-s':
             if arg in PADME_CE_NODE.keys():
                 PROD_RUN_SITE = arg
@@ -158,8 +166,13 @@ def main(argv):
                 print_help()
                 sys.exit(2)
 
-    if PROD_NAME == "":
+    if not PROD_NAME:
         print "*** ERROR *** No production name specified."
+        print_help()
+        sys.exit(2)
+
+    if not PROD_MC_VERSION:
+        print "*** ERROR *** No software version specified."
         print_help()
         sys.exit(2)
 
@@ -189,16 +202,16 @@ def main(argv):
         sys.exit(2)
 
     # If configuration file was not specified, use default
-    if PROD_CONFIG_FILE == "": PROD_CONFIG_FILE = "cfg/%s.mac"%PROD_NAME
+    if not PROD_MACRO_FILE: PROD_MACRO_FILE = "macro/%s.mac"%PROD_NAME
 
     # Check if configuration file exists
-    if not os.path.isfile(PROD_CONFIG_FILE):
-        print "*** ERROR *** Configuration file '%s' does not exist"%PROD_CONFIG_FILE
+    if not os.path.isfile(PROD_MACRO_FILE):
+        print "*** ERROR *** Macro file '%s' does not exist"%PROD_MACRO_FILE
         sys.exit(2)
 
     # If storage directory was not specified, use default
     if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = "/mc/%s/%s"%(PROD_MC_VERSION,PROD_NAME)
+        PROD_STORAGE_DIR = "/mc/%s/%s/sim"%(PROD_MC_VERSION,PROD_NAME)
 
     # If production directory was not specified, use default
     if PROD_DIR == "":
@@ -210,6 +223,15 @@ def main(argv):
             sys.exit(2)
         PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
 
+    # If description file was not given, use default
+    if not PROD_DESCRIPTION_FILE: PROD_DESCRIPTION_FILE = "description/%s.txt"%PROD_NAME
+
+    # Read file with a description of the production
+    if not os.path.isfile(PROD_DESCRIPTION_FILE):
+        print "*** ERROR *** Description file '%s' does not exist"%PROD_DESCRIPTION_FILE
+        sys.exit(2)
+    with open(PROD_DESCRIPTION_FILE,"r") as df: PROD_DESCRIPTION = df.read()
+
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
     print "- PadmeMC version %s"%PROD_MC_VERSION
@@ -217,9 +239,13 @@ def main(argv):
     print "- Submitting jobs to CE %s"%PROD_CE
     print "- Main production directory: %s"%PROD_DIR
     print "- Production script: %s"%PROD_SCRIPT
-    print "- PadmeMC macro file: %s"%PROD_CONFIG_FILE
+    print "- PadmeMC macro file: %s"%PROD_MACRO_FILE
     print "- Storage SRM: %s"%PROD_SRM
     print "- Storage directory: %s"%PROD_STORAGE_DIR
+    if PROD_RANDOM_LIST:
+        print "- Random seeds list: %s"%PROD_RANDOM_LIST
+    else:
+        print "- Random seeds automatically generated"
     if PROD_DEBUG:
         print "- Debug level: %d"%PROD_DEBUG
         PH.debug = PROD_DEBUG
@@ -233,6 +259,37 @@ def main(argv):
     if (DB.is_prod_in_db(PROD_NAME)):
         print "*** ERROR *** A production named '%s' already exists in DB"%PROD_NAME
         sys.exit(2)
+
+    # Create list of random seeds reading them from list, if available, or automatically
+    random_seeds = []
+    if PROD_RANDOM_LIST:
+        if os.path.exists(PROD_RANDOM_LIST):
+            with open(PROD_RANDOM_LIST,"r") as rl:
+                for line in rl:
+                    # Skip empty and comment lines
+                    if re.match("^\s*$",run) or re.match("^\s*#.*$",line): continue
+                    # Check if the format is <seed1>,<seed2>
+                    if re.match("^\s*\d+,\d+\s*$",line):
+                        random_seeds.append(line.strip())
+                    else:
+                        print "*** ERROR *** Ill formatted line found in random seeds list %s"%PROD_RANDOM_LIST
+                        print line
+                        sys.exit(2)
+            # Verify we have enough random seeds
+            if len(random_seeds) < PROD_NJOBS:
+                print "*** ERROR *** Random seeds list %s contains %d seed pairs but % are required"%(PROD_RANDOM_LIST,len(random_seeds),PROD_NJOBS)
+                sys.exit(2)
+
+        else:
+            print "*** ERROR *** Specified random seeds list %s was not found"%PROD_RANDOM_LIST
+            sys.exit(2)
+    else:
+        # Generate random seed pairs for all jobs using the Python "random" package
+        # As we do not initialize the seed in the "random" package,
+        # "the default is to use the current system time in milliseconds from epoch (1970)"
+        # Therefore each time we run the script we should get a different set of random seeds
+        for j in range(0,PROD_NJOBS):
+            random_seeds.append("%d,%d"%(random.randint(0,4294967295),random.randint(0,4294967295)))
 
     # Create production directory to host support dirs for all jobs
     print "- Creating production dir %s"%PROD_DIR
@@ -271,15 +328,18 @@ def main(argv):
     # This is needed to create the storage dir on the SRM server
     PH.renew_voms_proxy(JOB_PROXY_FILE)
 
+    # Create production directory in the storage SRM
+    print "- Creating production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
+    gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
+    if PROD_DEBUG: print ">",gfal_mkdir_cmd
+    if subprocess.call(shlex.split(gfal_mkdir_cmd)):
+        print "*** ERROR *** unable to create production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
+        shutil.rmtree(PROD_DIR)
+        sys.exit(2)
+
     # Create new production in DB
     print "- Creating new production in DB"
     prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,PROD_NJOBS)
-
-    # Create production directory in the storage SRM
-    print "- Creating dir %s in %s"%(PROD_STORAGE_DIR,PROD_SRM)
-    gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
-    if PROD_DEBUG: print ">",gfal_mkdir_cmd
-    rc = subprocess.call(shlex.split(gfal_mkdir_cmd))
 
     # Create job structures
     print "- Creating directory structure for production jobs"
@@ -307,9 +367,9 @@ def main(argv):
         # Copy common configuration file to job dir
         jobCfgFile = "%s/job.mac"%jobDir
         try:
-            shutil.copyfile(PROD_CONFIG_FILE,jobCfgFile)
+            shutil.copyfile(PROD_MACRO_FILE,jobCfgFile)
         except:
-            print "*** ERROR *** Unable to copy job macro file %s to %s"%(PROD_CONFIG_FILE,jobCfgFile)
+            print "*** ERROR *** Unable to copy job macro file %s to %s"%(PROD_MACRO_FILE,jobCfgFile)
             sys.exit(2)
 
         # Copy long-lived proxy file to job dir
@@ -325,6 +385,9 @@ def main(argv):
             print "*** ERROR *** Unable to set access permissions of job proxy file %s"%jobProxy
             sys.exit(2)
 
+        # Get random seed pair from list
+        jobSeeds = random_seeds.pop(0)
+
         # Create JDL file in job dir
         jobJDL = "%s/job.jdl"%jobDir
         with open(jobJDL,"w") as jf:
@@ -332,7 +395,7 @@ def main(argv):
             jf.write("Type = \"Job\";\n")
             jf.write("JobType = \"Normal\";\n")
             jf.write("Executable = \"/usr/bin/python\";\n")
-            jf.write("Arguments = \"-u job.py job.mac job.proxy %s %s %s %s %s\";\n"%(PROD_NAME,jobName,PROD_MC_VERSION,PROD_STORAGE_DIR,PROD_SRM))
+            jf.write("Arguments = \"-u job.py job.mac job.proxy %s %s %s %s %s %s\";\n"%(PROD_NAME,jobName,PROD_MC_VERSION,PROD_STORAGE_DIR,PROD_SRM,jobSeeds))
             jf.write("StdOutput = \"job.out\";\n")
             jf.write("StdError = \"job.err\";\n")
             jf.write("InputSandbox = {\"job.py\",\"job.mac\",\"job.proxy\"};\n")
@@ -340,10 +403,10 @@ def main(argv):
             jf.write("OutputSandboxBaseDestURI=\"gsiftp://localhost\";\n")
             jf.write("]\n")
 
-        # Create job entry in DB and register job (no input file list)
+        # Create job entry in DB and register job (jobList is only used in Reco jobs)
         with open(jobCfgFile,"r") as jcf: jobCfg=jcf.read()
         jobList = ""
-        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList)
+        DB.create_job(prodId,jobName,jobLocalDir,jobCfg,jobList,jobSeeds)
 
     # From now on we do not need the DB anymore: close connection
     DB.close_db()
