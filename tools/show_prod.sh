@@ -19,5 +19,5 @@ SELECT
   p.time_complete                     AS 'time complete'
 FROM production p
 $test_prod
-ORDER BY p.name;
+ORDER BY p.time_create;
 EOF
