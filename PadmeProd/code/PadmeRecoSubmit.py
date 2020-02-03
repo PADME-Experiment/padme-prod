@@ -240,6 +240,10 @@ def main(argv):
         if PROD_SOURCE_URI:
             PROD_CMD += " -S %s"%PROD_SOURCE_URI
 
+        # Add production storage site if specified
+        if PROD_STORAGE_SITE:
+            PROD_CMD += " -d %s"%PROD_STORAGE_SITE
+
         # Add debug option(s) if required
         if PROD_DEBUG:
             for i in range(0,PROD_DEBUG): PROD_CMD += " -V"
