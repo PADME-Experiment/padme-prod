@@ -161,61 +161,70 @@ exit 0
 
     print "PADMEMC program ended at %s (UTC) with return code %s"%(now_str(),rc_mc)
 
-    if rc_mc == 0 and not run_problems:
+    if rc_mc != 0 or run_problems:
+        if run_problems:
+            print "WARNING Problems found while parsing program output. Please check log."
+        if rc_mc != 0:
+            print "WARNING Simulation ended with non-zero return code. Please check log."
+        print "Output files will not be saved to tape storage."
+        sys.exit(1)
 
-        print "--- Saving output files ---"
+    print "--- Saving output files ---"
 
-        if os.path.exists("data.root"):
+    data_ok = True
+    if os.path.exists("data.root"):
 
-            data_src_file = "data.root"
-            data_size = os.path.getsize(data_src_file)
-            data_adler32 = get_adler32(data_src_file)
-            data_src_url = "file://%s/%s"%(job_dir,data_src_file)
+        data_src_file = "data.root"
+        data_size = os.path.getsize(data_src_file)
+        data_adler32 = get_adler32(data_src_file)
+        data_src_url = "file://%s/%s"%(job_dir,data_src_file)
 
-            data_dst_file = "%s_%s_data.root"%(prod_name,job_name)
-            data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
+        data_dst_file = "%s_%s_data.root"%(prod_name,job_name)
+        data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
 
-            print "Copying",data_src_url,"to",data_dst_url
-            data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
-            print ">",data_copy_cmd
-            rc = subprocess.call(data_copy_cmd.split())
-
+        print "Copying",data_src_url,"to",data_dst_url
+        data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
+        print ">",data_copy_cmd
+        rc = subprocess.call(data_copy_cmd.split())
+        if rc:
+            print "WARNING - gfal-copy returned error status %d"%rc
+            data_ok = False
+        else:
             print "MCDATA file %s with size %s and adler32 %s copied"%(data_dst_file,data_size,data_adler32)
-
-        else:
-
-            print "WARNING File data.root does not exist in current directory"
-
-        if os.path.exists("hsto.root"):
-
-            hsto_src_file = "hsto.root"
-            hsto_size = os.path.getsize(hsto_src_file)
-            hsto_adler32 = get_adler32(hsto_src_file)
-            hsto_src_url = "file://%s/%s"%(job_dir,hsto_src_file)
-
-            hsto_dst_file = "%s_%s_hsto.root"%(prod_name,job_name)
-            hsto_dst_url = "%s%s/%s"%(srm_uri,storage_dir,hsto_dst_file)
-
-            print "Copying %s to %s"%(hsto_src_url,hsto_dst_url)
-            hsto_copy_cmd = "gfal-copy %s %s"%(hsto_src_url,hsto_dst_url)
-            print ">",hsto_copy_cmd
-            rc = subprocess.call(hsto_copy_cmd.split())
-
-            print "MCHSTO file %s with size %s and adler32 %s copied"%(hsto_dst_file,hsto_size,hsto_adler32)
-
-        else:
-
-            print "WARNING File hsto.root does not exist in current directory"
-
-        if not (os.path.exists("data.root") and os.path.exists("hsto.root")): sys.exit(1)
 
     else:
 
-        if run_problems:
-            print "WARNING Problems found while parsing program output. Please check log."
+        print "WARNING File data.root does not exist in current directory"
+        data_ok = False
+
+    hsto_ok = True
+    if os.path.exists("hsto.root"):
+
+        hsto_src_file = "hsto.root"
+        hsto_size = os.path.getsize(hsto_src_file)
+        hsto_adler32 = get_adler32(hsto_src_file)
+        hsto_src_url = "file://%s/%s"%(job_dir,hsto_src_file)
+        
+        hsto_dst_file = "%s_%s_hsto.root"%(prod_name,job_name)
+        hsto_dst_url = "%s%s/%s"%(srm_uri,storage_dir,hsto_dst_file)
+
+        print "Copying %s to %s"%(hsto_src_url,hsto_dst_url)
+        hsto_copy_cmd = "gfal-copy %s %s"%(hsto_src_url,hsto_dst_url)
+        print ">",hsto_copy_cmd
+        rc = subprocess.call(hsto_copy_cmd.split())
+        if rc:
+            print "WARNING - gfal-copy returned error status %d"%rc
+            hsto_ok = False
         else:
-            print "WARNING Some errors occourred during simulation. Please check log."
-        print "Output files will not be saved to tape storage."
+            print "MCHSTO file %s with size %s and adler32 %s copied"%(hsto_dst_file,hsto_size,hsto_adler32)
+
+    else:
+
+        print "WARNING File hsto.root does not exist in current directory"
+        hsto_ok = False
+
+    #if not (os.path.exists("data.root") and os.path.exists("hsto.root")): sys.exit(1)
+    if not (data_ok and hsto_ok):
         sys.exit(1)
 
     print "Job ending at %s (UTC)"%now_str()

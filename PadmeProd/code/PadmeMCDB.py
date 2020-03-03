@@ -16,6 +16,9 @@ class PadmeMCDB:
         self.DB_PASSWD = os.getenv('PADME_MCDB_PASSWD','unknown')
         self.DB_NAME   = os.getenv('PADME_MCDB_NAME'  ,'PadmeMCDB')
 
+        self.ATTEMPTS_MAX = 100
+        self.ATTEMPTS_DELAY = 10
+
         self.conn = None
 
     def __del__(self):
@@ -26,15 +29,23 @@ class PadmeMCDB:
 
         self.close_db()
 
-        try:
-            self.conn = MySQLdb.connect(host   = self.DB_HOST,
-                                        port   = self.DB_PORT,
-                                        user   = self.DB_USER,
-                                        passwd = self.DB_PASSWD,
-                                        db     = self.DB_NAME)
-        except:
-            print "*** PadmeMCDB ERROR *** Unable to connect to DB. Exception: %s"%sys.exc_info()[0]
-            sys.exit(2)
+        attempts = 0
+        while True:
+            try:
+                self.conn = MySQLdb.connect(host   = self.DB_HOST,
+                                            port   = self.DB_PORT,
+                                            user   = self.DB_USER,
+                                            passwd = self.DB_PASSWD,
+                                            db     = self.DB_NAME)
+            except MySQLdb.Error as e:
+                print "*** MySQLdb ERROR while connecting to DB (%3d/%3d). Exception: %d:%s"%(attempts,self.ATTEMPTS_MAX,e.args[0],e.args[1])
+                attempts += 1
+                if attempts >= self.ATTEMPTS_MAX:
+                    print "*** PadmeMCDB ERROR *** Unable to connect to DB for %d times: aborting production."%attempts
+                    sys.exit(2)
+                time.sleep(self.ATTEMPTS_DELAY)
+                continue
+            break
 
     def close_db(self):
 
@@ -59,8 +70,8 @@ class PadmeMCDB:
         c.execute("""SELECT COUNT(id) FROM production WHERE name=%s""",(prod_name,))
         (n,) = c.fetchone()
         self.conn.commit()
-        if n: return 1
-        return 0
+        if n: return True
+        return False
 
     def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
 

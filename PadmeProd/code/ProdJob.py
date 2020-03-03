@@ -183,12 +183,15 @@ class ProdJob:
                 if finalize_ok and (job_exit_code == "0"):
                     if not self.parse_out_file(out_file):
                         print "  WARNING problems while parsing output file %s"%out_file
-                    if not self.parse_err_file(err_file):
+                        self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
+                    elif not self.parse_err_file(err_file):
                         print "  WARNING problems while parsing error file %s"%err_file
-                    self.db.close_job_submit(self.job_sub_id,7,job_description,job_exit_code)
-                    self.job_status = 2
-                    self.db.close_job(self.job_id,self.job_status)
-                    return "SUCCESSFUL"
+                        self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
+                    else:
+                        self.db.close_job_submit(self.job_sub_id,7,job_description,job_exit_code)
+                        self.job_status = 2
+                        self.db.close_job(self.job_id,self.job_status)
+                        return "SUCCESSFUL"
 
                 if job_exit_code == "0":
                     print "  WARNING job is DONE_OK and RC is 0 but output retrieval failed"
@@ -597,5 +600,24 @@ class ProdJob:
         return True
 
     def parse_err_file(self,err_file):
-        # Will add some activity when standard error patterns will be defined
+
+        n_errors = 0
+
+        jef = open(err_file,"r")
+        for line in jef:
+
+            # Trap errors of final gfal-copy
+            r = re.match("^gfal-copy error:\s+(\d+)\s+\(.*\)\s+-\s+(.*)$",line)
+            if r:
+                (err_nr,err_type,err_msg) = r.group()
+                print "  ERROR from gfal-copy command"
+                print "\tError number : %s"%err_nr
+                print "\tError type   : %s"%err_type
+                print "\tError message: %s"%err_msg
+                n_errors += 1
+
+        jef.close()
+
+        if n_errors: return False
+
         return True
