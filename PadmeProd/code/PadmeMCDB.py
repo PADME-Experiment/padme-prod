@@ -477,5 +477,67 @@ class PadmeMCDB:
             print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         self.conn.commit()
 
+    def get_prod_dir(self,prod_name):
+
+        prod_dir = ""
+        self.check_db()
+        c = self.conn.cursor()
+        try:
+            c.execute("""SELECT storage_dir FROM production WHERE name=%s""",(prod_name,))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
+        else:
+            (prod_dir,) = c.fetchone()
+        self.conn.commit()
+        return prod_dir
+
+    def get_prod_file_list(self,prod_name):
+
+        file_list = []
+        self.check_db()
+        c = self.conn.cursor()
+        try:
+            c.execute("""
+SELECT f.name 
+FROM file f
+    INNER JOIN job j ON j.id = f.job_id
+    INNER JOIN production p ON p.id = j.production_id
+WHERE p.name=%s
+            """,(prod_name,))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
+        else:
+            res = c.fetchall()
+            for (prod_file,) in res:
+                file_list.append("%s"%prod_file)
+            file_list.sort()
+        self.conn.commit()
+        return file_list
+
+    def get_prod_files_attr(self,prod_name):
+
+        # Return file attributes (size and adler32 checksum) of all files in a production as dictionaries
+        size = {}
+        checksum = {}
+        self.check_db()
+        c = self.conn.cursor()
+        try:
+            c.execute("""
+SELECT f.name,f.size,f.adler32 
+FROM file f
+    INNER JOIN job j ON j.id = f.job_id
+    INNER JOIN production p ON p.id = j.production_id
+WHERE p.name=%s
+            """,(prod_name,))
+        except MySQLdb.Error as e:
+            print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
+        else:
+            res = c.fetchall()
+            for (file_name,file_size,file_checksum) in res:
+                size[file_name] = int(file_size)
+                checksum[file_name] = file_checksum
+        self.conn.commit()
+        return (size,checksum)
+
     def __now__(self):
         return time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
