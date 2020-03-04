@@ -52,7 +52,7 @@ PROD_FILES_PER_JOB = 100
 PROD_FILES_PER_JOB_MAX = 1000
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
-PROD_SCRIPT = "%s/PadmeProd/script/padmemcreco_prod.py"%PADME_PROD
+PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_PROD
 PROD_CE_NODE = ""
 PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
@@ -67,7 +67,7 @@ PROD_DESCRIPTION = "TEST"
 def print_help():
 
     print "PadmeMCRecoProd -m <mcprod_name> -v <version> [-j <files_per_job>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-V] [-h]"
-    print "  -m <mcprod_name>\t\tname of the MC production to process"
+    print "  -m <mcprod_name>\tname of the MC production to process"
     print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS."
     print "  -n <prod_name>\tname for the production. Default: <mcprod_name>_<version>"
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
@@ -272,11 +272,13 @@ def main(argv):
     job_file_list = []
     prod_dir = DB.get_prod_dir(PROD_MCPROD_NAME)
     for f in DB.get_prod_file_list(PROD_MCPROD_NAME):
-        if len(job_file_list) == PROD_FILES_PER_JOB:
-            job_file_lists.append(job_file_list)
-            job_file_list = []
-        file_url = "%s/%s/%s"%(PADME_ROOT_URI["LNF"],prod_dir,f)
-        job_file_list.append(file_url)
+        # Make sure we process only "_data" files (drop "_hsto" files)
+        if re.match("^.*_data.root$",f):
+            if len(job_file_list) == PROD_FILES_PER_JOB:
+                job_file_lists.append(job_file_list)
+                job_file_list = []
+            file_url = "%s%s/%s"%(PADME_ROOT_URI["LNF"],prod_dir,f)
+            job_file_list.append(file_url)
     if job_file_list: job_file_lists.append(job_file_list)
 
     # Create new production in DB
