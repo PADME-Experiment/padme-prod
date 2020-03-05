@@ -34,7 +34,7 @@ PADME_SRM_URI = {
 }
 
 PADME_ROOT_URI = {
-    "LNF": "root://atlasse.lnf.infn.it:1094//vo.padme.org",
+    "LNF": "root://atlasse.lnf.infn.it:1094//dpm/lnf.infn.it/home/vo.padme.org"
 }
 
 # List of available submission sites and corresponding default CE nodes

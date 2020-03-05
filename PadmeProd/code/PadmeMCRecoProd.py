@@ -35,7 +35,7 @@ PADME_SRM_URI = {
 }
 
 PADME_ROOT_URI = {
-    "LNF": "root://atlasse.lnf.infn.it:1094/dpm/lnf.infn.it/home/vo.padme.org"
+    "LNF": "root://atlasse.lnf.infn.it:1094//dpm/lnf.infn.it/home/vo.padme.org"
 }
 
 # List of available submission sites and corresponding default CE nodes
@@ -182,18 +182,20 @@ def main(argv):
     # Define storage SRM URI according to chosen storage site (will add more options)
     PROD_SRM = PADME_SRM_URI[PROD_STORAGE_SITE]
 
+    # Check if number of files per job is valid
     if PROD_FILES_PER_JOB < 0 or PROD_FILES_PER_JOB > PROD_FILES_PER_JOB_MAX:
         print "*** ERROR *** Invalid number of files per job requested: %d - Max allowed: %d."%(PROD_FILES_PER_JOB,PROD_FILES_PER_JOB_MAX)
         print_help()
         sys.exit(2)
 
+    # If production name was not specified, use the standard name (<mcprod_name>_<reco_version>)
     if PROD_NAME == "":
         PROD_NAME = "%s_%s"%(PROD_MCPROD_NAME,PROD_RECO_VERSION)
         if PROD_DEBUG: print "No Production Name specified: using %s"%PROD_NAME
 
     # If storage directory was not specified, use default
     if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = DB.get_prod_dir(PROD_MCPROD_NAME).replace("/sim",PROD_RECO_VERSION)
+        PROD_STORAGE_DIR = DB.get_prod_dir(PROD_MCPROD_NAME).replace("/sim","/rec/%s"%PROD_RECO_VERSION)
 
     # If production directory was not specified, use default
     if PROD_DIR == "":
