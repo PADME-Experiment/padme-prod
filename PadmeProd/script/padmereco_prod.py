@@ -111,11 +111,15 @@ else
 fi
 echo "LD_LIBRARY_PATH = $LD_LIBRARY_PATH"
 $PADMERECO_EXE -l %s -o %s -n 0
+rc=$?
+if [ $rc -ne 0 ]; then
+  echo "*** ERROR *** PadmeReco returned error code $rc"
+fi
 pwd
 ls -l
 date
 echo "--- Ending PADMERECO production ---"
-exit 0
+exit $rc
 """%(padmereco_init_file,input_list,output_file)
     with open("job.sh","w") as sf: sf.write(script)
 

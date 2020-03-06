@@ -119,11 +119,15 @@ export PADME_SEED1=%s
 export PADME_SEED2=%s
 echo "Random seeds: $PADME_SEED1 $PADME_SEED2"
 $PADMEMC_EXE %s
+rc=$?
+if [ $rc -ne 0 ]; then
+  echo "*** ERROR *** PadmeMC returned error code $rc"
+fi
 pwd
 ls -l
 date
 echo "--- Ending PADMEMC production ---"
-exit 0
+exit $rc
 """%(padmemc_init_file,padme_seed1,padme_seed2,macro_file)
     with open("job.sh","w") as sf: sf.write(script)
 
