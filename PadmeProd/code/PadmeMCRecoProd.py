@@ -29,8 +29,9 @@ PH = ProxyHandler()
 
 # SRMs to access PADME area on the LNF and CNAF storage systems
 PADME_SRM_URI = {
-    "LNF":  "srm://atlasse.lnf.infn.it:8446/srm/managerv2?SFN=/dpm/lnf.infn.it/home/vo.padme.org",
-    "CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape"
+    "LNF":   "srm://atlasse.lnf.infn.it:8446/srm/managerv2?SFN=/dpm/lnf.infn.it/home/vo.padme.org",
+    "CNAF":  "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape",
+    "CNAF2": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padme"
 }
 
 PADME_ROOT_URI = {
@@ -45,14 +46,13 @@ PADME_CE_NODE = {
 }
 
 # Initialize global parameters and set some default values
-PROD_RUN_NAME = ""
+PROD_MCPROD_NAME = ""
 PROD_NAME = ""
 PROD_FILES_PER_JOB = 100
 PROD_FILES_PER_JOB_MAX = 1000
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
 PROD_SCRIPT = "%s/PadmeProd/script/padmereco_prod.py"%PADME_PROD
-PROD_SOURCE_URI = PADME_SRM_URI["LNF"]
 PROD_CE_NODE = ""
 PROD_CE_PORT = "8443"
 PROD_CE_QUEUE = ""
@@ -66,14 +66,12 @@ PROD_DESCRIPTION = "TEST"
 
 def print_help():
 
-    print "PadmeRecoProd -r <run_name> -v <version> [-y <year>] [-j <files_per_job>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-V] [-h]"
-    print "  -r <run_name>\t\tname of the run to process"
+    print "PadmeMCRecoProd -m <mcprod_name> -v <version> [-j <files_per_job>] [-n <prod_name>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <description>] [-V] [-h]"
+    print "  -m <mcprod_name>\tname of the MC production to process"
     print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS."
-    print "  -y <year>\t\tyear of run. N.B. used only if run name is not self-documenting"
-    print "  -n <prod_name>\tname for the production. Default: <run_name>_<version>"
+    print "  -n <prod_name>\tname for the production. Default: <mcprod_name>_<version>"
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
-    print "  -S <source_uri>\tURI to use to get list of files to process"
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
     print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
@@ -88,52 +86,15 @@ def execute_command(command):
     (out,err) = p.communicate()
     return (p.returncode,out,err)
 
-def rawfile_sort_key(f):
-    r = re.match("^.*_(\d\d)_(\d\d\d).root$",f)
-    if r:
-        index = int(r.group(2))*100+int(r.group(1))
-        #print f,r.group(1),r.group(2),index
-        return index
-    return 0
-
-def get_run_file_list(run):
-
-    run_file_list = []
-    run_dir = "%s/daq/%s/rawdata/%s"%(PROD_SOURCE_URI,PROD_YEAR,run)
-
-    tries = 0
-    cmd = "gfal-ls %s"%run_dir
-    while True:
-        (rc,out,err) = execute_command(cmd)
-        if rc == 0:
-            for line in iter(out.splitlines()):
-                if PROD_DEBUG >= 2: print line
-                run_file_list.append(line)
-            break
-        else:
-            print "WARNING gfal-ls returned error status %d while retrieving file list from run dir %s"%(rc,run_dir)
-            if PROD_DEBUG:
-                print "- STDOUT -\n%s"%out
-                print "- STDERR -\n%s"%err
-            tries += 1
-            if tries >= 3:
-                print "*** ERROR *** Could not retrieve list of files in %s. Tried %d times."%(run_dir,tries)
-                break
-            time.sleep(5)
-
-    run_file_list.sort(key=rawfile_sort_key)
-    return run_file_list
-
 def main(argv):
 
     # Declare that here we can possibly modify these global variables
-    global PROD_RUN_NAME
+    global PROD_MCPROD_NAME
     global PROD_NAME
     global PROD_FILES_PER_JOB
     global PROD_STORAGE_DIR
     global PROD_DIR
     global PROD_SCRIPT
-    global PROD_SOURCE_URI
     global PROD_CE_NODE
     global PROD_CE_PORT
     global PROD_CE_QUEUE
@@ -146,7 +107,7 @@ def main(argv):
     global PROD_DESCRIPTION
 
     try:
-        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:S:C:P:Q:v:p:D:",[])
+        opts,args = getopt.getopt(argv,"hVm:v:n:j:s:d:C:P:Q:p:D:",[])
     except getopt.GetoptError as e:
         print "Option error: %s"%str(e)
         print_help()
@@ -158,16 +119,12 @@ def main(argv):
             sys.exit(0)
         elif opt == '-V':
             PROD_DEBUG += 1
-        elif opt == '-r':
-            PROD_RUN_NAME = arg
-        elif opt == '-y':
-            PROD_YEAR = arg
-        elif opt == '-n':
-            PROD_NAME = arg
+        elif opt == '-m':
+            PROD_MCPROD_NAME = arg
         elif opt == '-v':
             PROD_RECO_VERSION = arg
-        elif opt == '-S':
-            PROD_SOURCE_URI = arg
+        elif opt == '-n':
+            PROD_NAME = arg
         elif opt == '-C':
             PROD_CE_NODE = arg
         elif opt == '-P':
@@ -200,13 +157,13 @@ def main(argv):
                 print_help()
                 sys.exit(2)
 
-    if not PROD_RUN_NAME:
-        print "*** ERROR *** No run name specified."
+    if not PROD_MCPROD_NAME:
+        print "*** ERROR *** No MC production name specified."
         print_help()
         sys.exit(2)
 
     if not PROD_RECO_VERSION:
-        print "*** ERROR *** No software version specified."
+        print "*** ERROR *** No reconstruction software version specified."
         print_help()
         sys.exit(2)
 
@@ -225,30 +182,20 @@ def main(argv):
     # Define storage SRM URI according to chosen storage site (will add more options)
     PROD_SRM = PADME_SRM_URI[PROD_STORAGE_SITE]
 
-    # Extract year of run from run name. If not found, use default
-    r = re.match("^run_\d+_(\d\d\d\d)\d\d\d\d_\d\d\d\d\d\d$",PROD_RUN_NAME)
-    if r:
-        PROD_YEAR = r.group(1)
-    else:
-        if PROD_YEAR:
-            if PROD_DEBUG: print "Run name format \'%s\' is unknown: using year %s"%(PROD_RUN_NAME,PROD_YEAR)
-        else:
-            print "*** ERROR *** run name format \'%s\' is unknown and no year was specified"%PROD_RUN_NAME
-            print_help()
-            sys.exit(2)
-
+    # Check if number of files per job is valid
     if PROD_FILES_PER_JOB < 0 or PROD_FILES_PER_JOB > PROD_FILES_PER_JOB_MAX:
         print "*** ERROR *** Invalid number of files per job requested: %d - Max allowed: %d."%(PROD_FILES_PER_JOB,PROD_FILES_PER_JOB_MAX)
         print_help()
         sys.exit(2)
 
+    # If production name was not specified, use the standard name (<mcprod_name>_<reco_version>)
     if PROD_NAME == "":
-        PROD_NAME = "%s_%s"%(PROD_RUN_NAME,PROD_RECO_VERSION)
+        PROD_NAME = "%s_%s"%(PROD_MCPROD_NAME,PROD_RECO_VERSION)
         if PROD_DEBUG: print "No Production Name specified: using %s"%PROD_NAME
 
     # If storage directory was not specified, use default
     if PROD_STORAGE_DIR == "":
-        PROD_STORAGE_DIR = "/daq/%s/recodata/%s/%s"%(PROD_YEAR,PROD_RECO_VERSION,PROD_NAME)
+        PROD_STORAGE_DIR = DB.get_prod_dir(PROD_MCPROD_NAME).replace("/sim","/rec/%s"%PROD_RECO_VERSION)
 
     # If production directory was not specified, use default
     if PROD_DIR == "":
@@ -262,7 +209,7 @@ def main(argv):
 
     # Show info about required production
     print "- Starting production %s"%PROD_NAME
-    print "- Processing run %s"%PROD_RUN_NAME
+    print "- Processing MC production %s"%PROD_MCPROD_NAME
     print "- PadmeReco version %s"%PROD_RECO_VERSION
     print "- Each job will process %d rawdata files"%PROD_FILES_PER_JOB
     print "- Submitting jobs to CE %s"%PROD_CE
@@ -318,25 +265,27 @@ def main(argv):
             sys.exit(2)
 
     # Check if VOMS proxy exists and is valid. Renew it if not.
-    # This is needed to get list of files in this run and to create the storage dir on the SRM server
+    # This is needed to create the storage dir on the SRM server
     PH.renew_voms_proxy(JOB_PROXY_FILE)
 
     # Get list of files for run to reconstruct
     # All files are assumed to be on the LNF SE and available via the ROOTX protocol
-    file_list = get_run_file_list(PROD_RUN_NAME)
     job_file_lists = []
     job_file_list = []
-    for f in file_list:
-        if len(job_file_list) == PROD_FILES_PER_JOB:
-            job_file_lists.append(job_file_list)
-            job_file_list = []
-        file_url = "%s/daq/%s/rawdata/%s/%s"%(PADME_ROOT_URI["LNF"],PROD_YEAR,PROD_RUN_NAME,f)
-        job_file_list.append(file_url)
+    prod_dir = DB.get_prod_dir(PROD_MCPROD_NAME)
+    for f in DB.get_prod_file_list(PROD_MCPROD_NAME):
+        # Make sure we process only "_data" files (drop "_hsto" files)
+        if re.match("^.*_data.root$",f):
+            if len(job_file_list) == PROD_FILES_PER_JOB:
+                job_file_lists.append(job_file_list)
+                job_file_list = []
+            file_url = "%s%s/%s"%(PADME_ROOT_URI["LNF"],prod_dir,f)
+            job_file_list.append(file_url)
     if job_file_list: job_file_lists.append(job_file_list)
 
     # Create new production in DB
     print "- Creating new production in DB"
-    prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,len(job_file_lists))
+    prodId = DB.create_recoprod(PROD_NAME,PROD_MCPROD_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,len(job_file_lists))
 
     # Create production directory in the storage SRM
     print "- Creating dir %s in %s"%(PROD_STORAGE_DIR,PROD_SRM)
