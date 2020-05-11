@@ -37,6 +37,40 @@ def renew_proxy_handler(signum,frame):
     # Reset alarm
     signal.alarm(PROXY_RENEW_TIME)
 
+def export_file(src_url,dst_url):
+
+    print "Copying",src_url,"to",dst_url
+
+    # Check if destination file already exists and rename it
+    # This can happen if job log retrieval fails after the job
+    # has successfully completed
+    stat_cmd = "gfal-stat %s"%dst_url
+    print ">",stat_cmd
+    rc = subprocess.call(stat_cmd.split())
+    if rc == 0:
+        print "WARNING - File %s exists. Attempting to rename it."%dst_url
+        idx = 0
+        while idx<100:
+            new_url = "%s.%02d"%(dst_url,idx)
+            rename_cmd = "gfal-rename %s %s"%(dst_url,new_url)
+            print ">",rename_cmd
+            rc = subprocess.call(rename_cmd.split())
+            if rc == 0:
+                # Rename succeeded: we can proceed with the copy
+                print "WARNING - Existing file renamed to %s"%new_url
+                break
+            # Rename failed: file already exists. Try next index
+            idx += 1
+            if idx == 100:
+                print "ERROR - File %s - Too many copies. Cannot rename existing file."%dst_url
+                return 1
+
+    copy_cmd = "gfal-copy %s %s"%(src_url,dst_url)
+    print ">",copy_cmd
+    rc = subprocess.call(copy_cmd.split())
+
+    return rc
+
 def main(argv):
 
     global PROXY_FILE
@@ -158,39 +192,44 @@ exit $rc
 
     print "PADMERECO program ended at %s (UTC) with return code %s"%(now_str(),rc_reco)
 
-    if rc_reco == 0 and not run_problems:
+    if rc_reco != 0 or run_problems:
+        if run_problems:
+            print "WARNING Problems found while parsing program output. Please check log."
+        if rc_reco != 0:
+            print "WARNING Reconstruction ended with non-zero return code. Please check log."
+        print "Output files will not be saved to tape storage."
+        sys.exit(1)
 
-        print "--- Saving output files ---"
+    print "--- Saving output files ---"
 
-        if os.path.exists(output_file):
+    data_ok = True
+    if os.path.exists(output_file):
 
-            data_src_file = output_file
-            data_size = os.path.getsize(data_src_file)
-            data_adler32 = get_adler32(data_src_file)
-            data_src_url = "file://%s/%s"%(job_dir,data_src_file)
+        data_src_file = output_file
+        data_size = os.path.getsize(data_src_file)
+        data_adler32 = get_adler32(data_src_file)
+        data_src_url = "file://%s/%s"%(job_dir,data_src_file)
 
-            data_dst_file = "%s_%s_reco.root"%(prod_name,job_name)
-            data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
+        data_dst_file = "%s_%s_reco.root"%(prod_name,job_name)
+        data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
 
-            print "Copying",data_src_url,"to",data_dst_url
-            data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
-            print ">",data_copy_cmd
-            rc = subprocess.call(data_copy_cmd.split())
-
-            print "RECODATA file %s with size %s and adler32 %s copied"%(data_dst_file,data_size,data_adler32)
-
+        #print "Copying",data_src_url,"to",data_dst_url
+        #data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
+        #print ">",data_copy_cmd
+        #rc = subprocess.call(data_copy_cmd.split())
+        rc = self.export_file(data_src_url,data_dst_url)
+        if rc:
+            print "WARNING - gfal-copy returned error status %d"%rc
+            data_ok = False
         else:
-
-            print "WARNING File %s does not exist in current directory"%output_file
-            sys.exit(1)
+            print "RECODATA file %s with size %s and adler32 %s copied"%(data_dst_file,data_size,data_adler32)
 
     else:
 
-        if run_problems:
-            print "WARNING Problems found while parsing program output. Please check log."
-        else:
-            print "WARNING Some errors occourred during reconstruction. Please check log."
-        print "Output files will not be saved to tape storage."
+        print "WARNING File %s does not exist in current directory"%output_file
+        data_ok = False
+
+    if not data_ok:
         sys.exit(1)
 
     print "Job ending at %s (UTC)"%now_str()
