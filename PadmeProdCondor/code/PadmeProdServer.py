@@ -29,8 +29,6 @@ class PadmeProdServer:
 
         self.prod_id = None
 
-        self.delegation_id = "%s_%s"%(self.prod_name,os.getpid())
-
         self.job_list = []
 
         # Delay between two checks. Interval is flat between 3m and 5m
@@ -55,7 +53,7 @@ class PadmeProdServer:
         self.prod_id = self.db.get_prod_id(self.prod_name)
     
         # Get some info about this prod
-        (dummy,prod_ce,prod_dir,proxy_file,prod_njobs) = self.db.get_prod_info(self.prod_id)
+        (dummy,prod_ce,prod_dir,proxy_info,prod_njobs) = self.db.get_prod_info(self.prod_id)
 
         # Check if production dir exists
         if not os.path.isdir(prod_dir):
@@ -67,18 +65,6 @@ class PadmeProdServer:
         sys.stdout = Logger(log_file_name)
         err_file_name = "%s/%s.err"%(prod_dir,self.prod_name)
         sys.stderr = Logger(err_file_name)
-    
-        # Check if proxy file exists
-        if not os.path.isfile(proxy_file):
-            print "*** ERROR *** Long-lived proxy file '%s' not found"%proxy_file
-            sys.exit(1)
-
-        # Extract CE endpoint and register it to proxy handler for delegation renewal
-        r = re.match("^(.*)/.*$",prod_ce)
-        if not r:
-            print "*** ERROR *** Unable to extract CE endpoint from production CE %s"%prod_ce
-            sys.exit(1)
-        self.ph.cream_ce_endpoint = r.group(1)
 
         # Define name of control file: if found, this production will cleanly quit
         quit_file = "%s/quit"%prod_dir
@@ -89,28 +75,38 @@ class PadmeProdServer:
             print "*** ERROR *** Number of jobs in DB and in production are different: %s != %s"%(len(job_id_list),prod_njobs)
             sys.exit(1)
 
+        # Get list of available CEs
+        ce_list = list(prod_ce.split(" "))
+
+        # Configure proxy renewal service
+        r = re.match("^\s*(\S+):(\d+)\s+(\S+)\s+(\S+)\s*$",proxy_info)
+        if r:
+            (self.ph.myproxy_server,self.ph.myproxy_port,self.ph.myproxy_name,self.ph.myproxy_passwd) = r.groups()
+        else:
+            print "*** ERROR *** Unable to decode MyProxy info: \"%s\""%proxy_info
+            sys.exit(1)
+
         # All checks are good: ready to start real production activities
         print "=== Starting Production %s ==="%self.prod_name
 
-        # Create and configure job handlers
+        # Create and configure job handlers. Assign each job to a different CE (round robin)
+        ce_idx = random.randint(0,len(ce_list)-1)
         for job_id in job_id_list:
-            self.job_list.append(ProdJob(job_id,prod_ce,self.db,self.delegation_id,self.debug))
+            self.job_list.append(ProdJob(job_id,ce_list[ce_idx],self.db,self.delegation_id,self.debug))
+            ce_idx += 1
+            if ce_idx >= len(ce_list): ce_idx = 0
     
         # Define absolute path of VOMS proxy file which will be used for this production and pass it to the proxy handler
         voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
         if self.debug: print "VOMS proxy for this production: %s"%voms_proxy
         self.ph.voms_proxy = voms_proxy
 
-        # Assign VOMS proxy file to the X509_USER_PROXY enivronment variable used by glite commands
+        # Assign VOMS proxy file to the X509_USER_PROXY environment variable used by glite commands
         os.environ['X509_USER_PROXY'] = voms_proxy
         if self.debug: print "Environment variable X509_USER_PROXY set to %s"%os.environ['X509_USER_PROXY']
 
         # Create voms proxy to be used for this production
         self.ph.create_voms_proxy(proxy_file)
-
-        # Register delegation id using proxy handler
-        self.ph.delegations.append(self.delegation_id)
-        self.ph.register_delegations()
 
         # Main production loop
         undef_counter = 0

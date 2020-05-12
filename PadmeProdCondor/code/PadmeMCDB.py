@@ -87,9 +87,9 @@ class PadmeMCDB:
 
         return prod_id
 
-    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
+    def create_mcprod(self,name,description,user_req,n_events_req,prod_ce,mc_version,prod_dir,storage_uri,storage_dir,proxy_info,n_jobs):
 
-        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
+        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_info,n_jobs)
 
         self.check_db()
         c = self.conn.cursor()
@@ -101,13 +101,13 @@ class PadmeMCDB:
 
         return prod_id
 
-    def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
+    def create_prod(self,name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_info,n_jobs):
 
         prod_id = 0
         self.check_db()
         c = self.conn.cursor()
         try:
-            c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs,n_jobs_ok,n_jobs_fail) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,0)""",(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,self.__now__(),n_jobs))
+            c.execute("""INSERT INTO production (name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,time_create,n_jobs,n_jobs_ok,n_jobs_fail) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,0)""",(name,' '.join(prod_ce),prod_dir,storage_uri,storage_dir,proxy_info,self.__now__(),n_jobs))
         except MySQLdb.Error as e:
             print "MySQL Error:%d:%s"%(e.args[0],e.args[1])
         else:

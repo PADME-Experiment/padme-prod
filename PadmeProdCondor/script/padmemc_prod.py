@@ -11,9 +11,6 @@ import shlex
 import select
 import errno
 
-PROXY_FILE = ""
-PROXY_RENEW_TIME = 6*3600
-
 def now_str():
 
     return time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
@@ -23,19 +20,6 @@ def get_adler32(outfile):
     adler_cmd = "adler32 %s"%outfile
     p = subprocess.Popen(shlex.split(adler_cmd),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     return p.communicate()[0].strip()
-
-def renew_proxy_handler(signum,frame):
-
-    global PROXY_FILE
-    global PROXY_RENEW_TIME
-
-    # Obtain new VOMS proxy from long-lived proxy
-    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(PROXY_FILE,PROXY_FILE)
-    print ">",proxy_cmd
-    rc = subprocess.call(proxy_cmd.split())
-
-    # Reset alarm
-    signal.alarm(PROXY_RENEW_TIME)
 
 def export_file(src_url,dst_url):
 
@@ -73,13 +57,10 @@ def export_file(src_url,dst_url):
 
 def main(argv):
 
-    global PROXY_FILE
-    global PROXY_RENEW_TIME
-
     # Top CVMFS directory for PadmeMC
     padmemc_cvmfs_dir = "/cvmfs/padme.infn.it/PadmeMC"
 
-    (macro_file,PROXY_FILE,prod_name,job_name,mc_version,storage_dir,srm_uri,rndm_seeds) = argv
+    (macro_file,prod_name,job_name,mc_version,storage_dir,srm_uri,rndm_seeds) = argv
 
     job_dir = os.getcwd()
 
@@ -91,11 +72,7 @@ def main(argv):
     print "SRM server URI %s"%srm_uri
     print "Storage directory %s"%storage_dir
     print "MC macro file %s"%macro_file
-    print "Proxy file %s"%PROXY_FILE
     print "Random seeds %s"%rndm_seeds
-
-    # Change permission rights for long-lived proxy (must be 600)
-    os.chmod(PROXY_FILE,0600)
 
     # Extract random seeds
     r = re.match("(\d+),(\d+)",rndm_seeds)
@@ -126,10 +103,6 @@ def main(argv):
     # Create local link to GDML files needed for geometry definition
     padmemc_gdml_dir = "%s/gdml"%padmemc_version_dir
     os.symlink(padmemc_gdml_dir,"gdml")
-
-    # Enable timer to renew VOMS proxy every 6h
-    signal.signal(signal.SIGALRM,renew_proxy_handler)
-    signal.alarm(PROXY_RENEW_TIME)
 
     # Prepare shell script to run PadmeMC
     script = """#!/bin/bash
@@ -174,7 +147,7 @@ exit $rc
     while True:
 
         # Handle script output and error streams with select.
-        # Trap "Interrupted system call" error (happens when proxy is renewed)
+        # Trap "Interrupted system call" error (probably not needed)
         reads = [p.stdout.fileno(),p.stderr.fileno()]
         try:
             ret = select.select(reads,[],[],1.)
@@ -220,10 +193,6 @@ exit $rc
         data_dst_file = "%s_%s_data.root"%(prod_name,job_name)
         data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
 
-        #print "Copying",data_src_url,"to",data_dst_url
-        #data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
-        #print ">",data_copy_cmd
-        #rc = subprocess.call(data_copy_cmd.split())
         rc = self.export_file(data_src_url,data_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
@@ -247,10 +216,6 @@ exit $rc
         hsto_dst_file = "%s_%s_hsto.root"%(prod_name,job_name)
         hsto_dst_url = "%s%s/%s"%(srm_uri,storage_dir,hsto_dst_file)
 
-        #print "Copying %s to %s"%(hsto_src_url,hsto_dst_url)
-        #hsto_copy_cmd = "gfal-copy %s %s"%(hsto_src_url,hsto_dst_url)
-        #print ">",hsto_copy_cmd
-        #rc = subprocess.call(hsto_copy_cmd.split())
         rc = self.export_file(hsto_src_url,hsto_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
@@ -263,7 +228,6 @@ exit $rc
         print "WARNING File hsto.root does not exist in current directory"
         hsto_ok = False
 
-    #if not (os.path.exists("data.root") and os.path.exists("hsto.root")): sys.exit(1)
     if not (data_ok and hsto_ok):
         sys.exit(1)
 

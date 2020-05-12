@@ -11,6 +11,7 @@ import re
 import daemon
 import daemon.pidfile
 import random
+import getpass
 
 from PadmeProdServer import PadmeProdServer
 from PadmeMCDB import PadmeMCDB
@@ -23,9 +24,6 @@ PADME_PROD = os.getenv('PADME_PROD',"./padme-prod")
 # Create global handler to PadmeMCDB
 DB = PadmeMCDB()
 
-# Create proxy handler
-PH = ProxyHandler()
-
 # ### Define PADME grid resources ###
 
 # SRMs to access PADME area on the LNF and CNAF storage systems
@@ -35,11 +33,9 @@ PADME_SRM_URI = {
     "CNAF2": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padme"
 }
 
-# List of available submission sites and corresponding default CE nodes
+# List of available submission sites and corresponding default Condor CE nodes
 PADME_CE_NODE = {
-    "LNF":   "atlasce1.lnf.infn.it:8443/cream-pbs-padme_c7",
-    "CNAF":  "ce04-lcg.cr.cnaf.infn.it:8443/cream-lsf-padme",
-    "SOFIA": "cream.grid.uni-sofia.bg:8443/cream-pbs-cms"
+    "CNAF":  ("ce01-htc.cr.cnaf.infn.it","ce02-htc.cr.cnaf.infn.it","ce03-htc.cr.cnaf.infn.it","ce04-htc.cr.cnaf.infn.it")
 }
 
 # Initialize global parameters and set some default values
@@ -49,14 +45,19 @@ PROD_NJOBS_MAX = 1000
 PROD_MACRO_FILE = ""
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
-PROD_SCRIPT = "%s/PadmeProd/script/padmemc_prod.py"%PADME_PROD
+PROD_SCRIPT = "%s/PadmeProdCondor/script/padmemc_prod.py"%PADME_PROD
 PROD_CE_NODE = ""
-PROD_CE_PORT = "8443"
-PROD_CE_QUEUE = ""
-PROD_RUN_SITE = "LNF"
+PROD_CE_PORT = "9619"
+PROD_RUN_SITE = "CNAF"
 PROD_STORAGE_SITE = "CNAF"
 PROD_MC_VERSION = ""
-PROD_PROXY_FILE = ""
+PROD_MYPROXY_SERVER = "myproxy.cnaf.infn.it"
+PROD_MYPROXY_PORT = 7512
+PROD_MYPROXY_LIFETIME = 720
+PROD_MYPROXY_NAME = ""
+PROD_MYPROXY_PASSWD = "myproxy"
+PROD_PROXY_VOMS = "vo.padme.org"
+PROD_PROXY_LIFETIME = 24
 PROD_DEBUG = 0
 PROD_DESCRIPTION_FILE = ""
 PROD_USER_REQ = "Unknown"
@@ -65,7 +66,7 @@ PROD_RANDOM_LIST = ""
 
 def print_help():
 
-    print "PadmeMCProd -n <prod_name> -j <number_of_jobs> -v <version> [-m <macro_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port>] -Q <CE_queue>] [-d <storage_site>] [-p <proxy>] [-D <desc_file>] [-U <user>] [-N <events>] [-R <seed_list>] [-V] [-h]"
+    print "PadmeMCProd -n <prod_name> -j <number_of_jobs> -v <version> [-m <macro_file>] [-s <submission_site>] [-C <CE_node> [-P <CE_port]] [-d <storage_site>] [-D <desc_file>] [-U <user>] [-N <events>] [-R <seed_list>] [-V] [-h]"
     print "  -n <prod_name>\tName for the production"
     print "  -j <number_of_jobs>\tNumber of production jobs to submit. Must be >0 and <=1000"
     print "  -v <version>\t\tVersion of PadmeMC to use for production. Must be installed on CVMFS."
@@ -73,9 +74,7 @@ def print_help():
     print "  -s <submission_site>\tSite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
     print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
-    print "  -Q <CE_queue>\t\tCE queue to use for submission. This parameter is mandatory if -C is specified"
     print "  -d <storage_site>\tSite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
-    print "  -p <proxy>\t\tLong lived proxy file to use for this production. If not defined it will be created."
     print "  -D <desc_file>\tFile containing a text describing the production (to be stored in the DB). Default: description/<prod_name>.txt"
     print "  -U <user>\t\tName of user who requested the production (to be stored in the DB). '%s' if not given."%PROD_USER_REQ
     print "  -N <events>\t\tTotal number of events requested by user (to be stored in the DB). %d if not given."%PROD_NEVENTS_REQ
@@ -93,11 +92,11 @@ def main(argv):
     global PROD_SCRIPT
     global PROD_CE_NODE
     global PROD_CE_PORT
-    global PROD_CE_QUEUE
     global PROD_RUN_SITE
     global PROD_STORAGE_SITE
     global PROD_MC_VERSION
-    global PROD_PROXY_FILE
+    global PROD_MYPROXY_NAME
+    global PROD_MYPROXY_PASSWD
     global PROD_DEBUG
     global PROD_DESCRIPTION_FILE
     global PROD_USER_REQ
@@ -105,7 +104,7 @@ def main(argv):
     global PROD_RANDOM_LIST
 
     try:
-        opts,args = getopt.getopt(argv,"hVn:j:v:m:s:C:P:Q:d:p:D:U:N:R:",[])
+        opts,args = getopt.getopt(argv,"hVn:j:v:m:s:C:P:d:D:U:N:R:",[])
     except getopt.GetoptError as e:
         print "Option error: %s"%str(e)
         print_help()
@@ -127,10 +126,6 @@ def main(argv):
             PROD_CE_NODE = arg
         elif opt == '-P':
             PROD_CE_PORT = arg
-        elif opt == '-Q':
-            PROD_CE_QUEUE = arg
-        elif opt == '-p':
-            PROD_PROXY_FILE = arg
         elif opt == '-D':
             PROD_DESCRIPTION_FILE = arg
         elif opt == '-U':
@@ -176,14 +171,10 @@ def main(argv):
         print_help()
         sys.exit(2)
 
-    # Choose submission CE
+    # Choose submission CEs
     if PROD_CE_NODE:
-        # If CE was explicitly defined, use it
-        if not PROD_CE_QUEUE:
-            print "*** ERROR *** No queue specified for CE %s"%PROD_CE_NODE
-            print_help()
-            sys.exit(2)
-        PROD_CE = "%s:%s/%s"%(PROD_CE_NODE,PROD_CE_PORT,PROD_CE_QUEUE)
+        # If CE was explicitly defined, always use it
+        PROD_CE = ("%s:%s/%s"%(PROD_CE_NODE,PROD_CE_PORT))
     else:
         # If CE was not defined, get it from submission site
         PROD_CE = PADME_CE_NODE[PROD_RUN_SITE]
@@ -223,6 +214,10 @@ def main(argv):
             sys.exit(2)
         PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
 
+    # If long-term myproxy name was not specified, use production name
+    if PROD_MYPROXY_NAME == "":
+        PROD_MYPROXY_NAME = PROD_NAME
+
     # If description file was not given, use default
     if not PROD_DESCRIPTION_FILE: PROD_DESCRIPTION_FILE = "description/%s.txt"%PROD_NAME
 
@@ -236,19 +231,19 @@ def main(argv):
     print "- Starting production %s"%PROD_NAME
     print "- PadmeMC version %s"%PROD_MC_VERSION
     print "- Submitting %d jobs"%PROD_NJOBS
-    print "- Submitting jobs to CE %s"%PROD_CE
+    print "- Submitting jobs to CE"," ".join(PROD_CE)
     print "- Main production directory: %s"%PROD_DIR
     print "- Production script: %s"%PROD_SCRIPT
     print "- PadmeMC macro file: %s"%PROD_MACRO_FILE
     print "- Storage SRM: %s"%PROD_SRM
     print "- Storage directory: %s"%PROD_STORAGE_DIR
+    print "- MyProxy name: %s"%PROD_MYPROXY_NAME
     if PROD_RANDOM_LIST:
         print "- Random seeds list: %s"%PROD_RANDOM_LIST
     else:
         print "- Random seeds automatically generated"
     if PROD_DEBUG:
         print "- Debug level: %d"%PROD_DEBUG
-        PH.debug = PROD_DEBUG
 
     # Check if production dir already exists
     if os.path.exists(PROD_DIR):
@@ -287,46 +282,29 @@ def main(argv):
         # Generate random seed pairs for all jobs using the Python "random" package
         # As we do not initialize the seed in the "random" package,
         # "the default is to use the current system time in milliseconds from epoch (1970)"
-        # Therefore each time we run the script we should get a different set of random seeds
+        # Therefore each time we run the script we should get a different set of random seeds.
         for j in range(0,PROD_NJOBS):
             random_seeds.append("%d,%d"%(random.randint(0,4294967295),random.randint(0,4294967295)))
+
+    # Create long-lived proxy on MyProxy server (also create a local proxy to talk to storage SRM)
+    grid_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
+    pwds = "%s\n%s\n%s\n"%(grid_passwd,PROD_MYPROXY_PASSWD,PROD_MYPROXY_PASSWD)
+    #print pwds
+    proxy_cmd = "myproxy-init --proxy_lifetime %d --cred_lifetime %d --voms %s --pshost %s --dn_as_username --credname %s --local_proxy"%(PROD_PROXY_LIFETIME,PROD_MYPROXY_LIFETIME,PROD_PROXY_VOMS,PROD_MYPROXY_SERVER,PROD_MYPROXY_NAME)
+    if PROD_DEBUG: print ">",proxy_cmd
+    p = subprocess.Popen(shlex.split(proxy_cmd),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate(input=pwds)
+    if p.returncode:
+        print "*** ERROR *** while registering long-lived proxy on %s"%PROD_MYPROXY_SERVER
+        print proxy_cmd
+        print "- STDOUT -\n%s"%out
+        print "- STDERR -\n%s"%err
+        shutil.rmtree(PROD_DIR)
+        sys.exit(2)
 
     # Create production directory to host support dirs for all jobs
     print "- Creating production dir %s"%PROD_DIR
     os.mkdir(PROD_DIR)
-
-    # Check if long-lived (30 days) proxy was defined. Create it if not
-    JOB_PROXY_FILE = "%s/%s.proxy"%(PROD_DIR,PROD_NAME)
-    if PROD_PROXY_FILE:
-        if os.path.isfile(PROD_PROXY_FILE):
-            try:
-                shutil.copyfile(PROD_PROXY_FILE,JOB_PROXY_FILE)
-            except:
-                print "*** ERROR *** Unable to copy long-lived proxy file %s to %s"%(PROD_PROXY_FILE,JOB_PROXY_FILE)
-                shutil.rmtree(PROD_DIR)
-                sys.exit(2)
-            try:
-                os.chmod(JOB_PROXY_FILE,0o600)
-            except:
-                print "*** ERROR *** Unable to set access permissions of long-lived proxy file %s"%JOB_PROXY_FILE
-                shutil.rmtree(PROD_DIR)
-                sys.exit(2)
-        else:
-            print "*** ERROR *** Long-lived proxy file %s was not found"%PROD_PROXY_FILE
-            shutil.rmtree(PROD_DIR)
-            sys.exit(2)
-    else:
-        print "- Creating long-lived proxy file %s"%JOB_PROXY_FILE
-        proxy_cmd = "voms-proxy-init --valid 720:0 --out %s"%JOB_PROXY_FILE
-        if PROD_DEBUG: print "> %s"%proxy_cmd
-        if subprocess.call(shlex.split(proxy_cmd)):
-            print "*** ERROR *** while generating long-lived proxy file %s"%JOB_PROXY_FILE
-            shutil.rmtree(PROD_DIR)
-            sys.exit(2)
-
-    # Check if VOMS proxy exists and is valid. Renew it if not.
-    # This is needed to create the storage dir on the SRM server
-    PH.renew_voms_proxy(JOB_PROXY_FILE)
 
     # Create production directory in the storage SRM
     print "- Creating production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
@@ -339,7 +317,8 @@ def main(argv):
 
     # Create new production in DB
     print "- Creating new production in DB"
-    prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,JOB_PROXY_FILE,PROD_NJOBS)
+    proxy_info = "%s:%d %s %s"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT,PROD_MYPROXY_NAME,PROD_MYPROXY_PASSWD)
+    prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,proxy_info,PROD_NJOBS)
 
     # Create job structures
     print "- Creating directory structure for production jobs"
@@ -372,36 +351,30 @@ def main(argv):
             print "*** ERROR *** Unable to copy job macro file %s to %s"%(PROD_MACRO_FILE,jobCfgFile)
             sys.exit(2)
 
-        # Copy long-lived proxy file to job dir
-        jobProxy = "%s/job.proxy"%jobDir
-        try:
-            shutil.copyfile(JOB_PROXY_FILE,jobProxy)
-        except:
-            print "*** ERROR *** Unable to copy job proxy file %s to %s"%(JOB_PROXY_FILE,jobProxy)
-            sys.exit(2)
-        try:
-            os.chmod(jobProxy,0o600)
-        except:
-            print "*** ERROR *** Unable to set access permissions of job proxy file %s"%jobProxy
-            sys.exit(2)
-
         # Get random seed pair from list
         jobSeeds = random_seeds.pop(0)
 
-        # Create JDL file in job dir
-        jobJDL = "%s/job.jdl"%jobDir
-        with open(jobJDL,"w") as jf:
-            jf.write("[\n")
-            jf.write("Type = \"Job\";\n")
-            jf.write("JobType = \"Normal\";\n")
-            jf.write("Executable = \"/usr/bin/python\";\n")
-            jf.write("Arguments = \"-u job.py job.mac job.proxy %s %s %s %s %s %s\";\n"%(PROD_NAME,jobName,PROD_MC_VERSION,PROD_STORAGE_DIR,PROD_SRM,jobSeeds))
-            jf.write("StdOutput = \"job.out\";\n")
-            jf.write("StdError = \"job.err\";\n")
-            jf.write("InputSandbox = {\"job.py\",\"job.mac\",\"job.proxy\"};\n")
-            jf.write("OutputSandbox = {\"job.out\", \"job.err\", \"job.sh\"};\n")
-            jf.write("OutputSandboxBaseDestURI=\"gsiftp://localhost\";\n")
-            jf.write("]\n")
+        # Create SUB file in job dir
+        jobSUB = "%s/job.sub"%jobDir
+        with open(jobSUB,"w") as jf:
+            jf.write("universe = vanilla\n")
+            jf.write("+Owner = undefined\n")
+            jf.write("executable = /usr/bin/python\n")
+            jf.write("transfer_executable = False\n")
+            jf.write("arguments = -u job.py job.mac %s %s %s %s %s %s\n"%(PROD_NAME,jobName,PROD_MC_VERSION,PROD_STORAGE_DIR,PROD_SRM,jobSeeds))
+            jf.write("output = job.out\n")
+            jf.write("error = job.err\n")
+            jf.write("log = job.log\n")
+            jf.write("should_transfer_files = yes\n")
+            jf.write("transfer_input_files = job.py,job.mac\n")
+            jf.write("transfer_output_files = job.log,job.out,job.err,job.sh\n")
+            jf.write("when_to_transfer_output = on_exit\n")
+            jf.write("MyProxyHost = %s:%d\n"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT))
+            jf.write("MyProxyCredentialName = %s\n"%PROD_MYPROXY_NAME)
+            jf.write("MyProxyPassword = %s\n"%PROD_MYPROXY_PASSWD)
+            jf.write("MyProxyRefreshThreshold = 600\n")
+            jf.write("MyProxyNewProxyLifetime = 1440\n")
+            jf.write("queue\n")
 
         # Create job entry in DB and register job (jobList is only used in Reco jobs)
         with open(jobCfgFile,"r") as jcf: jobCfg=jcf.read()
@@ -427,14 +400,14 @@ def main(argv):
     print "Production log file: %s"%prod_log_file
     print "Production err file: %s"%prod_err_file
 
-    # Start Padme Production Server as a daemon
-    context = daemon.DaemonContext()
-    context.working_directory = top_prod_dir
-    context.umask = 0o002
-    context.pidfile = daemon.pidfile.PIDLockFile(prod_lock)
-    context.open()
-    PadmeProdServer(PROD_NAME,PROD_DEBUG)
-    context.close()
+    ## Start Padme Production Server as a daemon
+    #context = daemon.DaemonContext()
+    #context.working_directory = top_prod_dir
+    #context.umask = 0o002
+    #context.pidfile = daemon.pidfile.PIDLockFile(prod_lock)
+    #context.open()
+    #PadmeProdServer(PROD_NAME,PROD_DEBUG)
+    #context.close()
 
 # Execution starts here
 if __name__ == "__main__": main(sys.argv[1:])
