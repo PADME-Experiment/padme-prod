@@ -11,6 +11,7 @@ import re
 import daemon
 import daemon.pidfile
 import random
+import pexpect
 import getpass
 
 from PadmeProdServer import PadmeProdServer
@@ -35,7 +36,7 @@ PADME_SRM_URI = {
 
 # List of available submission sites and corresponding default Condor CE nodes
 PADME_CE_NODE = {
-    "CNAF":  ("ce01-htc.cr.cnaf.infn.it","ce02-htc.cr.cnaf.infn.it","ce03-htc.cr.cnaf.infn.it","ce04-htc.cr.cnaf.infn.it")
+    "CNAF":  ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
 }
 
 # Initialize global parameters and set some default values
@@ -47,9 +48,9 @@ PROD_STORAGE_DIR = ""
 PROD_DIR = ""
 PROD_SCRIPT = "%s/PadmeProdCondor/script/padmemc_prod.py"%PADME_PROD
 PROD_CE_NODE = ""
-PROD_CE_PORT = "9619"
+PROD_CE_PORT = 9619
 PROD_RUN_SITE = "CNAF"
-PROD_STORAGE_SITE = "CNAF"
+PROD_STORAGE_SITE = "CNAF2"
 PROD_MC_VERSION = ""
 PROD_MYPROXY_SERVER = "myproxy.cnaf.infn.it"
 PROD_MYPROXY_PORT = 7512
@@ -73,7 +74,7 @@ def print_help():
     print "  -m <macro_file>\tMacro file with G4 cards to use. Default: macro/<prod_name>.mac"
     print "  -s <submission_site>\tSite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
     print "  -C <CE_node>\t\tCE node to be used for job submission. If defined, <submission_site> will not be used"
-    print "  -P <CE_port>\t\tCE port. Default: %s"%PROD_CE_PORT
+    print "  -P <CE_port>\t\tCE port. Default: %d"%PROD_CE_PORT
     print "  -d <storage_site>\tSite where the jobs output will be stored. Allowed: %s. Default: %s"%(",".join(PADME_SRM_URI.keys()),PROD_STORAGE_SITE)
     print "  -D <desc_file>\tFile containing a text describing the production (to be stored in the DB). Default: description/<prod_name>.txt"
     print "  -U <user>\t\tName of user who requested the production (to be stored in the DB). '%s' if not given."%PROD_USER_REQ
@@ -125,7 +126,11 @@ def main(argv):
         elif opt == '-C':
             PROD_CE_NODE = arg
         elif opt == '-P':
-            PROD_CE_PORT = arg
+            try:
+                PROD_CE_PORT = int(arg)
+            except ValueError:
+                print('*** ERROR *** CE Port (-P) must be an integer')
+                sys.exit(2)
         elif opt == '-D':
             PROD_DESCRIPTION_FILE = arg
         elif opt == '-U':
@@ -173,8 +178,8 @@ def main(argv):
 
     # Choose submission CEs
     if PROD_CE_NODE:
-        # If CE was explicitly defined, always use it
-        PROD_CE = ("%s:%s/%s"%(PROD_CE_NODE,PROD_CE_PORT))
+        # If CE was explicitly defined, create a list with it
+        PROD_CE = [ "%s:%d"%(PROD_CE_NODE,PROD_CE_PORT) ]
     else:
         # If CE was not defined, get it from submission site
         PROD_CE = PADME_CE_NODE[PROD_RUN_SITE]
@@ -288,18 +293,22 @@ def main(argv):
 
     # Create long-lived proxy on MyProxy server (also create a local proxy to talk to storage SRM)
     grid_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
-    pwds = "%s\n%s\n%s\n"%(grid_passwd,PROD_MYPROXY_PASSWD,PROD_MYPROXY_PASSWD)
-    #print pwds
     proxy_cmd = "myproxy-init --proxy_lifetime %d --cred_lifetime %d --voms %s --pshost %s --dn_as_username --credname %s --local_proxy"%(PROD_PROXY_LIFETIME,PROD_MYPROXY_LIFETIME,PROD_PROXY_VOMS,PROD_MYPROXY_SERVER,PROD_MYPROXY_NAME)
     if PROD_DEBUG: print ">",proxy_cmd
-    p = subprocess.Popen(shlex.split(proxy_cmd),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    (out,err) = p.communicate(input=pwds)
-    if p.returncode:
-        print "*** ERROR *** while registering long-lived proxy on %s"%PROD_MYPROXY_SERVER
-        print proxy_cmd
-        print "- STDOUT -\n%s"%out
-        print "- STDERR -\n%s"%err
-        shutil.rmtree(PROD_DIR)
+    child = pexpect.spawn(proxy_cmd)
+    try:
+        child.expect("Enter GRID pass phrase for this identity:")
+        if PROD_DEBUG: print child.before
+        child.sendline(grid_passwd)
+        child.expect("Enter MyProxy pass phrase:")
+        if PROD_DEBUG: print child.before
+        child.sendline(PROD_MYPROXY_PASSWD)
+        child.expect("Verifying - Enter MyProxy pass phrase:")
+        if PROD_DEBUG: print child.before
+        child.sendline(PROD_MYPROXY_PASSWD)
+    except:
+        print "*** ERROR *** Unable to register long-lived proxy on %s"%PROD_MYPROXY_SERVER
+        print str(child)
         sys.exit(2)
 
     # Create production directory to host support dirs for all jobs
@@ -400,14 +409,14 @@ def main(argv):
     print "Production log file: %s"%prod_log_file
     print "Production err file: %s"%prod_err_file
 
-    ## Start Padme Production Server as a daemon
-    #context = daemon.DaemonContext()
-    #context.working_directory = top_prod_dir
-    #context.umask = 0o002
-    #context.pidfile = daemon.pidfile.PIDLockFile(prod_lock)
-    #context.open()
-    #PadmeProdServer(PROD_NAME,PROD_DEBUG)
-    #context.close()
+    # Start Padme Production Server as a daemon
+    context = daemon.DaemonContext()
+    context.working_directory = top_prod_dir
+    context.umask = 0o002
+    context.pidfile = daemon.pidfile.PIDLockFile(prod_lock)
+    context.open()
+    PadmeProdServer(PROD_NAME,PROD_DEBUG)
+    context.close()
 
 # Execution starts here
 if __name__ == "__main__": main(sys.argv[1:])

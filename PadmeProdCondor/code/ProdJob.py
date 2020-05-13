@@ -9,22 +9,20 @@ import shlex
 
 class ProdJob:
 
-    def __init__(self,job_id,ce,db,delegation_id,debug):
+    def __init__(self,job_id,ce,db,debug):
 
         # Job identifier within the PadmeMCDB database
         self.job_id = job_id
 
         # CE to use for this job
         self.ce = ce
+        (self.ce_host,self.ce_port) = ce.split(":")
 
         # When caller changes this variable to True, job will be cancelled
         self.job_quit = False
 
         # Connection to PadmeMCDB database
         self.db = db
-
-        # Name of delegation to use for job submission
-        self.delegation_id = delegation_id
 
         # Get some job info from DB
         self.job_name = self.db.get_job_name(self.job_id)
@@ -262,7 +260,8 @@ class ProdJob:
         self.resubmissions += 1
 
         # Command to submit job
-        submit_cmd = "glite-ce-job-submit --delegationId %s --resource %s job.jdl"%(self.delegation_id,self.ce)
+        #submit_cmd = "glite-ce-job-submit --delegationId %s --resource %s job.jdl"%(self.delegation_id,self.ce)
+        submit_cmd = "condor_submit -pool %s -remote %s -spool job.sub"%(self.ce,self.ce_host)
 
         # Handle job submission trapping errors and allowing for multiple retries
         submits = 0

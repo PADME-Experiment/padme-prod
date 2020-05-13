@@ -66,6 +66,13 @@ class PadmeProdServer:
         err_file_name = "%s/%s.err"%(prod_dir,self.prod_name)
         sys.stderr = Logger(err_file_name)
 
+        if self.debug:
+            print "Production %s"%self.prod_name
+            print "CE list: %s"%" ".join(prod_ce)
+            print "Production directory: %s"%prod_dir
+            print "Proxy configuration: %s"%proxy_info
+            print "Number of jobs: %d"%prod_njobs
+
         # Define name of control file: if found, this production will cleanly quit
         quit_file = "%s/quit"%prod_dir
 
@@ -92,7 +99,7 @@ class PadmeProdServer:
         # Create and configure job handlers. Assign each job to a different CE (round robin)
         ce_idx = random.randint(0,len(ce_list)-1)
         for job_id in job_id_list:
-            self.job_list.append(ProdJob(job_id,ce_list[ce_idx],self.db,self.delegation_id,self.debug))
+            self.job_list.append(ProdJob(job_id,ce_list[ce_idx],self.db,self.debug))
             ce_idx += 1
             if ce_idx >= len(ce_list): ce_idx = 0
     
@@ -101,12 +108,8 @@ class PadmeProdServer:
         if self.debug: print "VOMS proxy for this production: %s"%voms_proxy
         self.ph.voms_proxy = voms_proxy
 
-        # Assign VOMS proxy file to the X509_USER_PROXY environment variable used by glite commands
-        os.environ['X509_USER_PROXY'] = voms_proxy
-        if self.debug: print "Environment variable X509_USER_PROXY set to %s"%os.environ['X509_USER_PROXY']
-
         # Create voms proxy to be used for this production
-        self.ph.create_voms_proxy(proxy_file)
+        self.ph.create_voms_proxy()
 
         # Main production loop
         undef_counter = 0
@@ -115,7 +118,7 @@ class PadmeProdServer:
         while True:
     
             # Renew proxy if needed
-            self.ph.renew_voms_proxy(proxy_file)
+            self.ph.renew_voms_proxy()
     
             # Check quit control file and send quit command to all jobs if found.
             if os.path.exists(quit_file):
@@ -176,9 +179,6 @@ class PadmeProdServer:
         jobs_fail = 0
         jobs_undef = 0
 
-        ## Reset proxy delegations array
-        #self.ph.delegations = []
-    
         print "--- Checking status of production jobs ---"
 
         for job in self.job_list:

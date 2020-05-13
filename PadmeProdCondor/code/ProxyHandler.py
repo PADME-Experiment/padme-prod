@@ -15,6 +15,9 @@ class ProxyHandler:
         # Define VOMS proxy validity in hours
         self.proxy_validity = 24
 
+        # If proxy validity is less than this time (seconds), renew it
+        self.proxy_renew_threshold = 3600
+
         # VO to use
         self.proxy_vo = "vo.padme.org"
 
@@ -36,13 +39,14 @@ class ProxyHandler:
     def renew_voms_proxy(self):
 
         # Check if current proxy is still valid and renew it if less than 2 hours before it expires
-        info_cmd = "voms-proxy-info"
+        info_cmd = "voms-proxy-info --actimeleft"
         if self.voms_proxy: info_cmd += " --file %s"%self.voms_proxy
         renew = True
         for line in self.run_command(info_cmd):
             if self.debug >= 2: print line.rstrip()
-            r = re.match("^timeleft  \: (\d+)\:.*$",line)
-            if r and int(r.group(1))>=2: renew = False
+            r = re.match("^\s*(\d+)\s*$",line)
+            if r and int(r.group(1))>=self.proxy_renew_threshold:
+                renew = False
 
         if renew:
             if self.debug:

@@ -33,9 +33,12 @@ def execute_command_with_stdin(command,input_string):
     return (rc,out,err)
 
 def print_help():
-    print "delete_prod -p prod_name [-f]"
+    print "delete_prod [-p prod_name] [-L prod_list] [-f]"
     print "-p <prod_name>\tName of the production to \"delete\""
+    print "-L <prod_list>\tName of file containing list of productions to \"delete\""
     print "-f\t\tEnable FAKE mode: show commands only"
+    print "Note: -p and -L parameters can be mixed and repeated multiple times to create a"
+    print "      list of productions to delete. Duplicates will be automatically removed."
 
 def renew_proxy():
 
