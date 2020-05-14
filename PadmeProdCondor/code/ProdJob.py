@@ -43,7 +43,7 @@ class ProdJob:
         self.job_submission_max = 5
         self.job_submission_delay = 30
 
-        # Number of times glite commands must retry before giving up and delay between attempts
+        # Number of times commands must retry before giving up and delay between attempts
         self.retries_max = 3
         self.retries_delay = 10
 
@@ -69,11 +69,25 @@ class ProdJob:
              10: "ABORTED",
              11: "UNKNOWN",
              12: "UNDEF",
+             13: "REMOVING",
+             14: "TRANSFERRING",
+             15: "SUSPENDED",
             100: "SUBMIT-FAILED",
             107: "DONE-OK, output problem",
             108: "DONE-FAILED, output problem",
             109: "CANCELLED, output problem",
             207: "DONE_OK, RC!=0"
+        }
+
+        # Define Condor job status map
+        self.job_condor_status_code = {
+            "1": "Idle",
+            "2": "Running",
+            "3": "Removing",
+            "4": "Completed",
+            "5": "Held",
+            "6": "Transferring Output",
+            "7": "Suspended"
         }
 
         # Define quit file: if found, job will cleanly quit
@@ -153,31 +167,16 @@ class ProdJob:
             print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,job_ce_status,job_location,job_description)
 
             # Check current job status and update DB if it changed
-            if job_ce_status == "REGISTERED" or job_ce_status == "PENDING" or job_ce_status == "IDLE" or job_ce_status == "RUNNING" or job_ce_status == "REALLY-RUNNING" or job_ce_status == "HELD":
+            if job_ce_status == "UNDEF":
 
-                if job_ce_status == "REGISTERED" and job_sub_status != 1:
-                    self.db.set_job_submit_status(self.job_sub_id,1)
-                elif job_ce_status == "PENDING" and job_sub_status != 2:
-                    self.db.set_job_submit_status(self.job_sub_id,2)
-                elif job_ce_status == "IDLE" and job_sub_status != 3:
-                    self.db.set_job_submit_status(self.job_sub_id,3)
-                elif job_ce_status == "RUNNING" and job_sub_status != 4:
-                    self.db.set_job_submit_status(self.job_sub_id,4)
-                    self.db.set_job_worker_node(self.job_sub_id,job_worker_node)
-                    self.db.set_job_wn_user(self.job_sub_id,job_local_user)
-                elif job_ce_status == "REALLY-RUNNING" and job_sub_status != 5:
-                    self.db.set_job_submit_status(self.job_sub_id,5)
-                    self.db.set_job_worker_node(self.job_sub_id,job_worker_node)
-                    self.db.set_job_wn_user(self.job_sub_id,job_local_user)
-                elif job_ce_status == "HELD" and job_sub_status != 6:
-                    self.db.set_job_submit_status(self.job_sub_id,6)
-
+                if job_sub_status != 12:
+                    self.db.set_job_submit_status(self.job_sub_id,12)
                 if self.job_quit: self.cancel_job()
-                return "ACTIVE"
+                return "UNDEF"
 
-            elif job_ce_status == "DONE-OK":
+            elif self.job_condor_status_code[job_ce_status] == "Completed":
 
-                (finalize_ok,sh_file,out_file,err_file) = self.finalize_job()
+                (finalize_ok,sh_file,out_file,err_file,log_file,status_file) = self.finalize_job()
                 if finalize_ok and (job_exit_code == "0"):
                     if not self.parse_out_file(out_file):
                         print "  WARNING problems while parsing output file %s"%out_file
@@ -192,49 +191,31 @@ class ProdJob:
                         return "SUCCESSFUL"
 
                 if job_exit_code == "0":
-                    print "  WARNING job is DONE_OK and RC is 0 but output retrieval failed"
+                    print "  WARNING job is Completed and RC is 0 but output retrieval failed"
                     self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
                 else:
-                    print "  WARNING job is DONE_OK but with RC %s"%job_exit_code
+                    print "  WARNING job is Completed but with RC %s"%job_exit_code
                     self.db.close_job_submit(self.job_sub_id,207,job_description,job_exit_code)
-
-            elif job_ce_status == "DONE-FAILED":
-
-                (finalize_ok,sh_file,out_file,err_file) = self.finalize_job()
-                if finalize_ok:
-                    self.db.close_job_submit(self.job_sub_id,8,job_description,job_exit_code)
-                else:
-                    self.db.close_job_submit(self.job_sub_id,108,job_description,job_exit_code)
-
-            elif job_ce_status == "CANCELLED":
-
-                (finalize_ok,sh_file,out_file,err_file) = self.finalize_job()
-                if finalize_ok:
-                    self.db.close_job_submit(self.job_sub_id,9,job_description,job_exit_code)
-                else:
-                    self.db.close_job_submit(self.job_sub_id,109,job_description,job_exit_code)
-
-            elif job_ce_status == "ABORTED":
-
-                self.db.close_job_submit(self.job_sub_id,10,job_description,job_exit_code)
-                self.purge_job()
-
-            elif job_ce_status == "UNKNOWN":
-
-                if job_sub_status != 11:
-                    print "  WARNING glite-ce-job-status returned status UNKNOWN"
-                    self.db.set_job_submit_status(self.job_sub_id,11)
-                if self.job_quit: self.cancel_job()
-                return "UNDEF"
 
             else:
 
-                if job_sub_status != 12:
-                    if job_ce_status != "UNDEF":
-                        print "  WARNING unrecognized job status '%s' returned by glite-ce-job-status"%job_ce_status
-                    self.db.set_job_submit_status(self.job_sub_id,12)
+                if self.job_condor_status_code[job_ce_status] == "Idle" and job_sub_status != 3:
+                    self.db.set_job_submit_status(self.job_sub_id,3)
+                elif self.job_condor_status_code[job_ce_status] == "Running" and job_sub_status != 4:
+                    self.db.set_job_submit_status(self.job_sub_id,4)
+                    self.db.set_job_worker_node(self.job_sub_id,job_worker_node)
+                    self.db.set_job_wn_user(self.job_sub_id,job_local_user)
+                elif self.job_condor_status_code[job_ce_status] == "Held" and job_sub_status != 6:
+                    self.db.set_job_submit_status(self.job_sub_id,6)
+                elif self.job_condor_status_code[job_ce_status] == "Removing" and job_sub_status != 13:
+                    self.db.set_job_submit_status(self.job_sub_id,13)
+                elif self.job_condor_status_code[job_ce_status] == "Transferring Output" and job_sub_status != 14:
+                    self.db.set_job_submit_status(self.job_sub_id,14)
+                elif self.job_condor_status_code[job_ce_status] == "Suspended" and job_sub_status != 15:
+                    self.db.set_job_submit_status(self.job_sub_id,15)
+
                 if self.job_quit: self.cancel_job()
-                return "UNDEF"
+                return "ACTIVE"
 
             # If we are quitting, tag job as FAILED
             if self.job_quit:
@@ -260,7 +241,6 @@ class ProdJob:
         self.resubmissions += 1
 
         # Command to submit job
-        #submit_cmd = "glite-ce-job-submit --delegationId %s --resource %s job.jdl"%(self.delegation_id,self.ce)
         submit_cmd = "condor_submit -pool %s -remote %s -spool job.sub"%(self.ce,self.ce_host)
 
         # Handle job submission trapping errors and allowing for multiple retries
@@ -271,8 +251,9 @@ class ProdJob:
                 self.ce_job_id = ""
                 for l in iter(out.splitlines()):
                     if self.debug > 1: print l
-                    if re.match("^https://\S+:\d+/CREAM\S+$",l):
-                        self.ce_job_id = l
+                    r = re.match("^.* submitted to cluster (\d+)\.\s*$",l)
+                    if r:
+                        self.ce_job_id = r.group(1)
                         break
                 if self.ce_job_id:
                     if self.debug: print "CE job id is %s"%self.ce_job_id
@@ -297,12 +278,11 @@ class ProdJob:
             time.sleep(self.job_submission_delay)
 
         # Save submission info to DB
-        self.db.set_job_submitted(self.job_sub_id,self.ce_job_id)
+        self.db.set_job_submitted(self.job_sub_id,"%s %s %s"%(self.ce,self.ce_host,self.ce_job_id))
     
         # Go back to main directory before returning
         os.chdir(main_dir)
     
-        # Return submitted job identifier
         return True
   
     def get_job_ce_status(self):
@@ -315,7 +295,7 @@ class ProdJob:
         description = ""
 
         # Retrieve status of job
-        job_status_cmd = "glite-ce-job-status --level 2 %s"%self.ce_job_id
+        job_status_cmd = "condor_q -long -pool %s -name %s %s"%(self.ce,self.ce_host,self.ce_job_id)
 
         # Handle job status info collection. Trap errors and allow for multiple retries
         retries = 0
@@ -324,22 +304,16 @@ class ProdJob:
             (rc,out,err) = self.execute_command(job_status_cmd)
             if rc == 0:
                 for l in iter(out.splitlines()):
-                    if self.debug >= 2: print l
-                    r = re.match("^\s*Current Status\s+=\s+\[(.+)\].*$",l)
+                    if self.debug >1: print l
+                    r = re.match("^\s*JobStatus\s+=\s+(\d+)\s*$",l)
                     if r: status = r.group(1)
-                    r = re.match("^\s*ExitCode\s+=\s+\[(.+)\].*$",l)
+                    r = re.match("^\s*ExitCode\s+=\s+(\d+)\s*$",l)
                     if r: exit_code = r.group(1)
-                    r = re.match("^\s*Worker Node\s+=\s+\[(.+)\].*$",l)
-                    if r: worker_node = r.group(1)
-                    r = re.match("^\s*Local User\s+=\s+\[(.+)\].*$",l)
+                    r = re.match("^\s*Owner\s+=\s+\"(\S+)\"\s*$",l)
                     if r: local_user = r.group(1)
-                    r = re.match("^\s*Deleg Proxy ID\s+=\s+\[(.+)\].*$",l)
-                    if r: delegation = r.group(1)
-                    r = re.match("^\s*Description\s*=\s*\[(.*)\].*",l)
-                    if r: description = r.group(1)
                 break
 
-            print "  WARNING glite-ce-job-status returned error code %d"%rc
+            print "  WARNING condor_q command returned error code %d"%rc
             if self.debug:
                 print "- STDOUT -\n%s"%out
                 print "- STDERR -\n%s"%err
@@ -362,7 +336,29 @@ class ProdJob:
     
         # Go to job working directory (do not forget to go back to main_dir before returning!)
         os.chdir(self.job_dir)
-    
+
+        # Create directory to hold submission results
+        sub_dir = "submit_%03d"%self.db.get_job_submit_index(self.job_sub_id)
+        try:
+            os.mkdir(sub_dir)
+        except:
+            print "  WARNING Unable to create directory %s"%sub_dir
+            os.chdir(main_dir)
+            return (False,"","","")
+
+        os.chdir(sub_dir)
+
+        # Save final job status
+        job_status_cmd = "condor_q -long -pool %s -name %s %s"%(self.ce,self.ce_host,self.ce_job_id)
+        (rc,out,err) = self.execute_command(job_status_cmd)
+        if rc == 0:
+            with open("job.status","w") as jf: jf.write(out)
+        else:
+            print "  WARNING final condor_q command returned error code %d"%rc
+            if self.debug:
+                print "- STDOUT -\n%s"%out
+                print "- STDERR -\n%s"%err
+
         # Handle output files retrieval. Trap errors and allow for multiple retries
         retries = 0
         while not self.retrieve_job_output():
@@ -372,28 +368,10 @@ class ProdJob:
             if retries >= self.retries_max:
                 print "  WARNING unable to retrieve output files. Retried %d times"%retries
                 os.chdir(main_dir)
-                return (False,"","","")
+                return (False,"","","","")
 
             # Wait a bit before retrying
             time.sleep(self.retries_delay)
-
-        # Get name of dir where output files are stored from the ce_job_id
-        out_dir = self.ce_job_id[8:].replace(":","_").replace("/","_")
-
-        # Check if job output dir exists
-        if not os.path.isdir(out_dir):
-            print "  WARNING Job output dir %s not found"%out_dir
-            os.chdir(main_dir)
-            return (False,"","","")
-
-        # Rename output dir with submission name
-        sub_dir = "submit_%03d"%self.db.get_job_submit_index(self.job_sub_id)
-        try:
-            os.rename(out_dir,sub_dir)
-        except:
-            print "  WARNING Unable to rename directory %s to %s"%(out_dir,sub_dir)
-            os.chdir(main_dir)
-            return (False,"","","")
 
         # Go back to top directory
         os.chdir(main_dir)
@@ -402,36 +380,42 @@ class ProdJob:
 
         # Check if all output files are there
 
+        sh_file  = "%s/%s/job.sh"%(self.job_dir,sub_dir)
+        if not os.path.exists(sh_file):
+            sh_file = ""
+            output_ok = False
+            print "  WARNING File %s not found"%sh_file
+    
         out_file = "%s/%s/job.out"%(self.job_dir,sub_dir)
         if not os.path.exists(out_file):
+            out_file = ""
             output_ok = False
             print "  WARNING File %s not found"%out_file
 
         err_file = "%s/%s/job.err"%(self.job_dir,sub_dir)
         if not os.path.exists(err_file):
+            err_file = ""
             output_ok = False
             print "  WARNING File %s not found"%err_file
-    
-        sh_file  = "%s/%s/job.sh"%(self.job_dir,sub_dir)
-        if not os.path.exists(sh_file):
+
+        log_file = "%s/%s/job.log"%(self.job_dir,sub_dir)
+        if not os.path.exists(log_file):
+            log_file = ""
             output_ok = False
-            print "  WARNING File %s not found"%sh_file
+            print "  WARNING File %s not found"%log_file
 
-        # Purge job only if all expected files were found
-        if output_ok:
-            self.purge_job()
-        else:
-            print "  WARNING Problems while retrieving job output files: job will not be purged from CE"
+        status_file = "%s/%s/job.status"%(self.job_dir,sub_dir)
+        if not os.path.exists(status_file):
+            status_file = ""
+            output_ok = False
+            print "  WARNING File %s not found"%status_file
 
-        # Go back to top directory
-        os.chdir(main_dir)
-    
-        return (output_ok,sh_file,out_file,err_file)
+        return (output_ok,sh_file,out_file,err_file,log_file,status_file)
 
     def retrieve_job_output(self):
 
         if self.debug: print "  Retrieveing output for job %s from CE %s"%(self.ce_job_id,self.ce)
-        output_job_cmd = "glite-ce-job-output --noint %s"%self.ce_job_id
+        output_job_cmd = "condor_transfer_data -pool %s -name %s %s"%(self.ce,self.ce_host,self.ce_job_id)
         (rc,out,err) = self.execute_command(output_job_cmd)
         if rc:
             print "  WARNING Retrieve output command for job %s returned error code %d"%(self.ce_job_id,rc)
@@ -441,23 +425,10 @@ class ProdJob:
             return False
         return True
 
-    def purge_job(self):
-
-        if self.debug: print "  Purging job %s from CE %s"%(self.ce_job_id,self.ce)
-        purge_job_cmd = "glite-ce-job-purge --noint %s"%self.ce_job_id
-        (rc,out,err) = self.execute_command(purge_job_cmd)
-        if rc:
-            print "  WARNING Job %s purge command returned error code %d"%(self.ce_job_id,rc)
-            if self.debug:
-                print "- STDOUT -\n%s"%out
-                print "- STDERR -\n%s"%err
-            return False
-        return True
-
     def cancel_job(self):
 
         if self.debug: print "  Cancelling job %s from CE %s"%(self.ce_job_id,self.ce)
-        cancel_job_cmd = "glite-ce-job-cancel --noint %s"%self.ce_job_id
+        cancel_job_cmd = "condor_rm -pool %s -name %s %s"%(self.ce,self.ce_host,self.ce_job_id)
         (rc,out,err) = self.execute_command(cancel_job_cmd)
         if rc != 0:
             print "  WARNING Job %s cancel command returned error code %d"%(self.ce_job_id,rc)
@@ -469,7 +440,7 @@ class ProdJob:
 
     def parse_out_file(self,out_file):
 
-        # Parse log file and write information to DB
+        # Parse out file and write information to DB
 
         worker_node = ""
         wn_user = ""

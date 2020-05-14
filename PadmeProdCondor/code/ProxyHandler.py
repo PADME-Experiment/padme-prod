@@ -26,27 +26,29 @@ class ProxyHandler:
 
         # Initialize MyProxy information (no default)
         self.myproxy_server = ""
-        self.myproxy_port = 0
+        self.myproxy_port = ""
         self.myproxy_name = ""
         self.myproxy_passwd = ""
-
-    def run_command(self,command):
-
-        if self.debug: print "> %s"%command
-        p = subprocess.Popen(shlex.split(command),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-        return iter(p.stdout.readline,b'')
 
     def renew_voms_proxy(self):
 
         # Check if current proxy is still valid and renew it if less than 2 hours before it expires
         info_cmd = "voms-proxy-info --actimeleft"
         if self.voms_proxy: info_cmd += " --file %s"%self.voms_proxy
+        if self.debug: print "> %s"%info_cmd
         renew = True
-        for line in self.run_command(info_cmd):
-            if self.debug >= 2: print line.rstrip()
-            r = re.match("^\s*(\d+)\s*$",line)
-            if r and int(r.group(1))>=self.proxy_renew_threshold:
-                renew = False
+        p = subprocess.Popen(shlex.split(info_cmd),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        (out,err) = p.communicate()
+        if p.returncode == 0:
+            for l in iter(out.splitlines()):
+                if self.debug >= 2: print l.rstrip()
+                r = re.match("^\s*(\d+)\s*$",l)
+                if r and int(r.group(1))>=self.proxy_renew_threshold:
+                    renew = False
+        else:
+            print "  WARNING voms-proxy-info returned error code %d"%p.returncode
+            print "- STDOUT -\n%s"%out
+            print "- STDERR -\n%s"%err
 
         if renew:
             if self.debug:
@@ -64,7 +66,14 @@ class ProxyHandler:
                 print "- Creating new %s VOMS proxy from MyProxy server %s"%(self.voms_proxy,self.myproxy_server)
             else:
                 print "- Creating new standard VOMS proxy from MyProxy server %s"%self.myproxy_server
-        logon_cmd = "myproxy-logon --voms %s --pshost %s:%d --dn_as_username --credname %s --stdin_pass"%(self.proxy_vo,self.myproxy_server,self.myproxy_port,self.myproxy_name)
+        logon_cmd = "myproxy-logon --voms %s --pshost %s:%s --dn_as_username --credname %s --stdin_pass"%(self.proxy_vo,self.myproxy_server,self.myproxy_port,self.myproxy_name)
         if self.voms_proxy: logon_cmd += " --out %s"%self.voms_proxy
-        for line in self.run_command(logon_cmd):
-            if self.debug: print line.rstrip()
+        if self.debug: print "> %s"%logon_cmd
+        p = subprocess.Popen(shlex.split(logon_cmd),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        (out,err) = p.communicate(input=self.myproxy_passwd)
+        if p.returncode == 0:
+            if self.debug: print out
+        else:
+            print "  WARNING myproxy-logon returned error code %d"%p.returncode
+            print "- STDOUT -\n%s"%out
+            print "- STDERR -\n%s"%err

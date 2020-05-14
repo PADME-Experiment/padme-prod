@@ -35,6 +35,9 @@ class PadmeProdServer:
         self.prod_check_delay = 180
         self.prod_check_delay_spread = 120
 
+        # Define environment variables for Condor authentication
+        os.environ['_condor_SEC_CLIENT_AUTHENTICATION_METHODS'] = 'GSI'
+
         self.start_production()
 
     def start_production(self):
@@ -68,7 +71,7 @@ class PadmeProdServer:
 
         if self.debug:
             print "Production %s"%self.prod_name
-            print "CE list: %s"%" ".join(prod_ce)
+            print "CE list: %s"%prod_ce
             print "Production directory: %s"%prod_dir
             print "Proxy configuration: %s"%proxy_info
             print "Number of jobs: %d"%prod_njobs
