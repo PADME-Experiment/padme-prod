@@ -57,6 +57,9 @@ def export_file(src_url,dst_url):
 
 def main(argv):
 
+    # Immediately create an empty shell script to avoid Condor holding jobs when this file is not found
+    open("job.sh","w").close()
+
     # Top CVMFS directory for PadmeMC
     padmemc_cvmfs_dir = "/cvmfs/padme.infn.it/PadmeMC"
 

@@ -376,7 +376,7 @@ def main(argv):
             jf.write("log = job.log\n")
             jf.write("should_transfer_files = yes\n")
             jf.write("transfer_input_files = job.py,job.mac\n")
-            jf.write("transfer_output_files = job.log,job.out,job.err,job.sh\n")
+            jf.write("transfer_output_files = job.sh\n")
             jf.write("when_to_transfer_output = on_exit\n")
             jf.write("MyProxyHost = %s:%d\n"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT))
             jf.write("MyProxyCredentialName = %s\n"%PROD_MYPROXY_NAME)

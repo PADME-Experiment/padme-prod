@@ -128,7 +128,7 @@ class ProdJob:
                 self.db.close_job(self.job_id,self.job_status)
                 return "FAILED"
             elif self.submit_job():
-                print "- %-8s %-60s %s"%(self.job_name,self.ce_job_id,"SUBMITTED")
+                print "- %-8s %-60s %s"%(self.job_name,self.full_ce_job_id,"SUBMITTED")
                 self.job_status = 1
                 self.db.set_job_status(self.job_id,self.job_status)
                 return "ACTIVE"
@@ -145,7 +145,7 @@ class ProdJob:
 
         # Status 2: Job was successful
         if self.job_status == 2:
-            print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,"DONE_OK",location,description)
+            print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,"DONE_OK",location,description)
             return "SUCCESSFUL"
 
         # Status 3: Job failed. Show how it failed
@@ -153,9 +153,9 @@ class ProdJob:
             if not self.job_sub_id:
                 print "- %-8s %-60s %s"%(self.job_name,"UNDEFINED","SUBMIT_FAILED")
             elif job_sub_status in self.job_sub_status_code.keys():
-                print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,self.job_sub_status_code[job_sub_status],location,description)
+                print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,self.job_sub_status_code[job_sub_status],location,description)
             else:
-                print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,"FAILED with status %d (?)"%job_sub_status,location,description)
+                print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,"FAILED with status %d (?)"%job_sub_status,location,description)
             return "FAILED"
 
         # Status is 1: Job is being processed
@@ -164,38 +164,61 @@ class ProdJob:
             # Get current status of job submission from CE
             (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status()
             job_location = "%s@%s"%(job_local_user,job_worker_node)
-            print "- %-8s %-60s %s %s %s"%(self.job_name,self.ce_job_id,job_ce_status,job_location,job_description)
+            if job_ce_status == "UNDEF" or job_ce_status == "CANCELLED":
+                print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,job_ce_status,job_location,job_description)
+            else:
+                print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,self.job_condor_status_code[job_ce_status],job_location,job_description)
 
             # Check current job status and update DB if it changed
             if job_ce_status == "UNDEF":
 
                 if job_sub_status != 12:
                     self.db.set_job_submit_status(self.job_sub_id,12)
-                if self.job_quit: self.cancel_job()
+                if self.job_quit:
+                    # Retrieve output but do not parse it
+                    self.finalize_job()
+                    self.cancel_job()
                 return "UNDEF"
+
+            elif job_ce_status == "CANCELLED":
+
+                self.db.close_job_submit(self.job_sub_id,9,job_description,job_exit_code)
 
             elif self.job_condor_status_code[job_ce_status] == "Completed":
 
-                (finalize_ok,sh_file,out_file,err_file,log_file,status_file) = self.finalize_job()
-                if finalize_ok and (job_exit_code == "0"):
-                    if not self.parse_out_file(out_file):
-                        print "  WARNING problems while parsing output file %s"%out_file
-                        self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
-                    elif not self.parse_err_file(err_file):
-                        print "  WARNING problems while parsing error file %s"%err_file
-                        self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
-                    else:
+                # Retrieve output files
+                (finalize_ok,file_list) = self.finalize_job()
+
+                if job_exit_code != "0":
+
+                    print "  WARNING job is Completed but with RC %s"%job_exit_code
+                    self.db.close_job_submit(self.job_sub_id,207,job_description,job_exit_code)
+
+                elif not finalize_ok:
+
+                    print "  WARNING job is Completed and RC is 0 but output retrieval failed"
+                    self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
+
+                else:
+
+                    parse_ok = True
+
+                    if not ( file_list["out"] and self.parse_out_file(file_list["out"]) ):
+                        print "  WARNING problems while parsing output file %s"%file_list["out"]
+                        parse_ok = False
+
+                    if not ( file_list["err"] and self.parse_out_file(file_list["err"]) ):
+                        print "  WARNING problems while parsing error file %s"%file_list["err"]
+                        parse_ok = False
+
+                    if parse_ok:
                         self.db.close_job_submit(self.job_sub_id,7,job_description,job_exit_code)
                         self.job_status = 2
                         self.db.close_job(self.job_id,self.job_status)
                         return "SUCCESSFUL"
-
-                if job_exit_code == "0":
-                    print "  WARNING job is Completed and RC is 0 but output retrieval failed"
-                    self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
-                else:
-                    print "  WARNING job is Completed but with RC %s"%job_exit_code
-                    self.db.close_job_submit(self.job_sub_id,207,job_description,job_exit_code)
+                    else:
+                        print "  WARNING job is Completed, RC is 0, output retrieval succeeded but parsing failed"
+                        self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
 
             else:
 
@@ -214,7 +237,11 @@ class ProdJob:
                 elif self.job_condor_status_code[job_ce_status] == "Suspended" and job_sub_status != 15:
                     self.db.set_job_submit_status(self.job_sub_id,15)
 
-                if self.job_quit: self.cancel_job()
+                if self.job_quit:
+                    # Retrieve output but do not parse it
+                    self.finalize_job()
+                    self.cancel_job()
+
                 return "ACTIVE"
 
             # If we are quitting, tag job as FAILED
@@ -256,7 +283,6 @@ class ProdJob:
                         self.ce_job_id = r.group(1)
                         break
                 if self.ce_job_id:
-                    if self.debug: print "CE job id is %s"%self.ce_job_id
                     break
                 print "  WARNING Submit successful but no CE job id returned."
             else:
@@ -278,7 +304,10 @@ class ProdJob:
             time.sleep(self.job_submission_delay)
 
         # Save submission info to DB
-        self.db.set_job_submitted(self.job_sub_id,"%s %s %s"%(self.ce,self.ce_host,self.ce_job_id))
+        #self.db.set_job_submitted(self.job_sub_id,"%s %s %s"%(self.ce,self.ce_host,self.ce_job_id))
+        self.full_ce_job_id = "%s/%s"%(self.ce,self.ce_job_id)
+        if self.debug: print "CE job id is %s"%self.full_ce_job_id
+        self.db.set_job_submitted(self.job_sub_id,self.full_ce_job_id)
     
         # Go back to main directory before returning
         os.chdir(main_dir)
@@ -303,14 +332,18 @@ class ProdJob:
 
             (rc,out,err) = self.execute_command(job_status_cmd)
             if rc == 0:
-                for l in iter(out.splitlines()):
-                    if self.debug >1: print l
-                    r = re.match("^\s*JobStatus\s+=\s+(\d+)\s*$",l)
-                    if r: status = r.group(1)
-                    r = re.match("^\s*ExitCode\s+=\s+(\d+)\s*$",l)
-                    if r: exit_code = r.group(1)
-                    r = re.match("^\s*Owner\s+=\s+\"(\S+)\"\s*$",l)
-                    if r: local_user = r.group(1)
+                # If condor_q succeeds but output is empty, the job was cancelled with condor_rm
+                if out == "":
+                    status = "CANCELLED"
+                else:
+                    for l in iter(out.splitlines()):
+                        if self.debug >1: print l
+                        r = re.match("^\s*JobStatus\s+=\s+(\d+)\s*$",l)
+                        if r: status = r.group(1)
+                        r = re.match("^\s*ExitCode\s+=\s+(\d+)\s*$",l)
+                        if r: exit_code = r.group(1)
+                        r = re.match("^\s*Owner\s+=\s+\"(\S+)\"\s*$",l)
+                        if r: local_user = r.group(1)
                 break
 
             print "  WARNING condor_q command returned error code %d"%rc
@@ -337,17 +370,6 @@ class ProdJob:
         # Go to job working directory (do not forget to go back to main_dir before returning!)
         os.chdir(self.job_dir)
 
-        # Create directory to hold submission results
-        sub_dir = "submit_%03d"%self.db.get_job_submit_index(self.job_sub_id)
-        try:
-            os.mkdir(sub_dir)
-        except:
-            print "  WARNING Unable to create directory %s"%sub_dir
-            os.chdir(main_dir)
-            return (False,"","","")
-
-        os.chdir(sub_dir)
-
         # Save final job status
         job_status_cmd = "condor_q -long -pool %s -name %s %s"%(self.ce,self.ce_host,self.ce_job_id)
         (rc,out,err) = self.execute_command(job_status_cmd)
@@ -362,55 +384,48 @@ class ProdJob:
         # Handle output files retrieval. Trap errors and allow for multiple retries
         retries = 0
         while not self.retrieve_job_output():
-
             # Abort if too many attempts failed
             retries += 1
             if retries >= self.retries_max:
                 print "  WARNING unable to retrieve output files. Retried %d times"%retries
-                os.chdir(main_dir)
-                return (False,"","","","")
-
+                break
             # Wait a bit before retrying
             time.sleep(self.retries_delay)
+
+        # Create directory to hold submission results
+        sub_dir = "submit_%03d"%self.db.get_job_submit_index(self.job_sub_id)
+        try:
+            os.mkdir(sub_dir)
+        except:
+            print "  WARNING Unable to create directory %s"%sub_dir
+            os.chdir(main_dir)
+            return (False,{})
+
+        output_ok = True
+
+        # Move all final files to submission directory
+
+        file_list = {
+            "out"    : "job.out",
+            "err"    : "job.err",
+            "log"    : "job.log",
+            "sh"     : "job.sh",
+            "status" : "job.status",
+        }
+        for k in file_list:
+            f = file_list[k]
+            if os.path.exists(f):
+                os.rename(f,"%s/%s"%(sub_dir,f))
+                file_list[k] = "%s/%s/%s"%(self.job_dir,sub_dir,f)
+            else:
+                output_ok = False
+                print "  WARNING File %s not found"%f
+                file_list[k] = ""
 
         # Go back to top directory
         os.chdir(main_dir)
 
-        output_ok = True
-
-        # Check if all output files are there
-
-        sh_file  = "%s/%s/job.sh"%(self.job_dir,sub_dir)
-        if not os.path.exists(sh_file):
-            sh_file = ""
-            output_ok = False
-            print "  WARNING File %s not found"%sh_file
-    
-        out_file = "%s/%s/job.out"%(self.job_dir,sub_dir)
-        if not os.path.exists(out_file):
-            out_file = ""
-            output_ok = False
-            print "  WARNING File %s not found"%out_file
-
-        err_file = "%s/%s/job.err"%(self.job_dir,sub_dir)
-        if not os.path.exists(err_file):
-            err_file = ""
-            output_ok = False
-            print "  WARNING File %s not found"%err_file
-
-        log_file = "%s/%s/job.log"%(self.job_dir,sub_dir)
-        if not os.path.exists(log_file):
-            log_file = ""
-            output_ok = False
-            print "  WARNING File %s not found"%log_file
-
-        status_file = "%s/%s/job.status"%(self.job_dir,sub_dir)
-        if not os.path.exists(status_file):
-            status_file = ""
-            output_ok = False
-            print "  WARNING File %s not found"%status_file
-
-        return (output_ok,sh_file,out_file,err_file,log_file,status_file)
+        return (output_ok,outfile_list)
 
     def retrieve_job_output(self):
 
