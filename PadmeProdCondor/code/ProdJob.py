@@ -425,7 +425,7 @@ class ProdJob:
         # Go back to top directory
         os.chdir(main_dir)
 
-        return (output_ok,outfile_list)
+        return (output_ok,file_list)
 
     def retrieve_job_output(self):
 
