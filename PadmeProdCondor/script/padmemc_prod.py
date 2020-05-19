@@ -10,6 +10,8 @@ import subprocess
 import shlex
 import select
 import errno
+import getpass
+import socket
 
 def now_str():
 
@@ -26,12 +28,12 @@ def export_file(src_url,dst_url):
     print "Copying",src_url,"to",dst_url
 
     # Check if destination file already exists and rename it
-    # This can happen if job log retrieval fails after the job
-    # has successfully completed
+    # This can happen if job log retrieval fails after the job has successfully completed
     stat_cmd = "gfal-stat %s"%dst_url
     print ">",stat_cmd
-    rc = subprocess.call(stat_cmd.split())
-    if rc == 0:
+    p = subprocess.Popen(shlex.split(stat_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    if p.returncode == 0:
         print "WARNING - File %s exists. Attempting to rename it."%dst_url
         idx = 0
         while idx<100:
@@ -49,11 +51,15 @@ def export_file(src_url,dst_url):
                 print "ERROR - File %s - Too many copies. Cannot rename existing file."%dst_url
                 return 1
 
+    # Now execute the copy command
     copy_cmd = "gfal-copy %s %s"%(src_url,dst_url)
     print ">",copy_cmd
-    rc = subprocess.call(copy_cmd.split())
-
-    return rc
+    p = subprocess.Popen(shlex.split(copy_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    print out
+    if p.returncode != 0:
+        sys.stderr.write(err)
+    return p.returncode
 
 def main(argv):
 
@@ -66,10 +72,12 @@ def main(argv):
     (macro_file,prod_name,job_name,mc_version,storage_dir,srm_uri,rndm_seeds) = argv
 
     job_dir = os.getcwd()
+    host_name = socket.gethostname()
+    user_name = getpass.getuser()
 
     print "=== PadmeMC Production %s Job %s ==="%(prod_name,job_name)
     print "Job starting at %s (UTC)"%now_str()
-    print "Job running on node %s as user %s in dir %s"%(os.getenv('HOSTNAME'),os.getenv('USER'),job_dir)
+    print "Job running on node %s as user %s in dir %s"%(host_name,user_name,job_dir)
 
     print "PadmeMC version %s"%mc_version
     print "SRM server URI %s"%srm_uri
@@ -183,6 +191,12 @@ exit $rc
         print "Output files will not be saved to tape storage."
         sys.exit(1)
 
+    # Show info about available proxy
+    print "--- VOMS proxy information ---"
+    proxy_cmd = "voms-proxy-info --all"
+    print ">",proxy_cmd
+    rc = subprocess.call(proxy_cmd.split())
+
     print "--- Saving output files ---"
 
     data_ok = True
@@ -196,7 +210,7 @@ exit $rc
         data_dst_file = "%s_%s_data.root"%(prod_name,job_name)
         data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
 
-        rc = self.export_file(data_src_url,data_dst_url)
+        rc = export_file(data_src_url,data_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
             data_ok = False
@@ -219,7 +233,7 @@ exit $rc
         hsto_dst_file = "%s_%s_hsto.root"%(prod_name,job_name)
         hsto_dst_url = "%s%s/%s"%(srm_uri,storage_dir,hsto_dst_file)
 
-        rc = self.export_file(hsto_src_url,hsto_dst_url)
+        rc = export_file(hsto_src_url,hsto_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
             hsto_ok = False

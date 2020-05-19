@@ -311,17 +311,44 @@ def main(argv):
         print str(child)
         sys.exit(2)
 
-    # Create production directory to host support dirs for all jobs
-    print "- Creating production dir %s"%PROD_DIR
-    os.mkdir(PROD_DIR)
+    # Get position of local proxy to be sent to Condor
+    voms_proxy_local = ""
+    voms_cmd = "voms-proxy-info"
+    if PROD_DEBUG: print "> %s"%voms_cmd
+    p = subprocess.Popen(shlex.split(voms_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    if p.returncode == 0:
+        for l in iter(out.splitlines()):
+            if PROD_DEBUG > 1: print l
+            r = re.match("^\s*path\s+:\s+(\S+)\s*$",l)
+            if r:
+                voms_proxy_local = r.group(1)
+                break
+    if voms_proxy_local == "":
+        print "*** ERROR *** Unable get path to local VOMS proxy"
+        sys.exit(2)
+    print "- Local VOMS proxy at %s"%voms_proxy_local
 
-    # Create production directory in the storage SRM
+    # Create production directory in the storage SRM (try 3 times before giving up)
     print "- Creating production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
     gfal_mkdir_cmd = "gfal-mkdir -p %s%s"%(PROD_SRM,PROD_STORAGE_DIR)
     if PROD_DEBUG: print ">",gfal_mkdir_cmd
-    if subprocess.call(shlex.split(gfal_mkdir_cmd)):
-        print "*** ERROR *** unable to create production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
-        shutil.rmtree(PROD_DIR)
+    n_try = 0
+    while True:
+        if subprocess.call(shlex.split(gfal_mkdir_cmd)) == 0: break
+        n_try += 1
+        if n_try >= 3:
+            print "*** ERROR *** unable to create production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
+            sys.exit(2)
+        print "WARNING gfal-mkdir failed. Retry in 5 seconds."
+        time.sleep(5)
+
+    # Create production directory to host support dirs for all jobs
+    print "- Creating production dir %s"%PROD_DIR
+    try:
+        os.mkdir(PROD_DIR)
+    except:
+        print "*** ERROR *** unable to create local production dir %s"%PROD_DIR
         sys.exit(2)
 
     # Create new production in DB
@@ -375,9 +402,10 @@ def main(argv):
             jf.write("error = job.err\n")
             jf.write("log = job.log\n")
             jf.write("should_transfer_files = yes\n")
-            jf.write("transfer_input_files = job.py,job.mac\n")
+            jf.write("transfer_input_files = job.py,job.mac,%s\n"%voms_proxy_local)
             jf.write("transfer_output_files = job.sh\n")
             jf.write("when_to_transfer_output = on_exit\n")
+            jf.write("x509userproxy = %s\n"%voms_proxy_local)
             jf.write("MyProxyHost = %s:%d\n"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT))
             jf.write("MyProxyCredentialName = %s\n"%PROD_MYPROXY_NAME)
             jf.write("MyProxyPassword = %s\n"%PROD_MYPROXY_PASSWD)

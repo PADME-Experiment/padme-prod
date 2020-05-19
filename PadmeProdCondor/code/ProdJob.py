@@ -81,13 +81,13 @@ class ProdJob:
 
         # Define Condor job status map
         self.job_condor_status_code = {
-            "1": "Idle",
-            "2": "Running",
-            "3": "Removing",
-            "4": "Completed",
-            "5": "Held",
-            "6": "Transferring Output",
-            "7": "Suspended"
+            "1": "IDLE",
+            "2": "RUNNING",
+            "3": "REMOVING",
+            "4": "COMPLETED",
+            "5": "HELD",
+            "6": "TRANSFERRING OUTPUT",
+            "7": "SUSPENDED"
         }
 
         # Define quit file: if found, job will cleanly quit
@@ -162,12 +162,20 @@ class ProdJob:
         if self.job_status == 1:
 
             # Get current status of job submission from CE
-            (job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status()
+            #(job_ce_status,job_exit_code,job_worker_node,job_local_user,job_delegation,job_description) = self.get_job_ce_status()
+            job_ce_status   = "UNDEF"
+            job_exit_code   = ""
+            job_worker_node = "UNKNOWN"
+            job_local_user  = "UNKNOWN"
+            job_description = ""
+            job_info = self.get_job_ce_status()
+            if "status"      in job_info: job_ce_status   = job_info["status"]
+            if "exit_code"   in job_info: job_exit_code   = job_info["exit_code"]
+            if "worker_node" in job_info: job_worker_node = job_info["worker_node"]
+            if "local_user"  in job_info: job_local_user  = job_info["local_user"]
+            if "description" in job_info: job_description = job_info["description"]
             job_location = "%s@%s"%(job_local_user,job_worker_node)
-            if job_ce_status == "UNDEF" or job_ce_status == "CANCELLED":
-                print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,job_ce_status,job_location,job_description)
-            else:
-                print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,self.job_condor_status_code[job_ce_status],job_location,job_description)
+            print "- %-8s %-60s %s %s %s"%(self.job_name,self.full_ce_job_id,job_ce_status,job_location,job_description)
 
             # Check current job status and update DB if it changed
             if job_ce_status == "UNDEF":
@@ -184,7 +192,7 @@ class ProdJob:
 
                 self.db.close_job_submit(self.job_sub_id,9,job_description,job_exit_code)
 
-            elif self.job_condor_status_code[job_ce_status] == "Completed":
+            elif job_ce_status == "COMPLETED":
 
                 # Retrieve output files
                 (finalize_ok,file_list) = self.finalize_job()
@@ -203,11 +211,11 @@ class ProdJob:
 
                     parse_ok = True
 
-                    if not ( file_list["out"] and self.parse_out_file(file_list["out"]) ):
+                    if not ( ("out" in file_list) and self.parse_out_file(file_list["out"]) ):
                         print "  WARNING problems while parsing output file %s"%file_list["out"]
                         parse_ok = False
 
-                    if not ( file_list["err"] and self.parse_out_file(file_list["err"]) ):
+                    if not ( ("err" in file_list) and self.parse_err_file(file_list["err"]) ):
                         print "  WARNING problems while parsing error file %s"%file_list["err"]
                         parse_ok = False
 
@@ -222,19 +230,19 @@ class ProdJob:
 
             else:
 
-                if self.job_condor_status_code[job_ce_status] == "Idle" and job_sub_status != 3:
+                if   job_ce_status == "IDLE" and job_sub_status != 3:
                     self.db.set_job_submit_status(self.job_sub_id,3)
-                elif self.job_condor_status_code[job_ce_status] == "Running" and job_sub_status != 4:
+                elif job_ce_status == "RUNNING" and job_sub_status != 4:
                     self.db.set_job_submit_status(self.job_sub_id,4)
                     self.db.set_job_worker_node(self.job_sub_id,job_worker_node)
                     self.db.set_job_wn_user(self.job_sub_id,job_local_user)
-                elif self.job_condor_status_code[job_ce_status] == "Held" and job_sub_status != 6:
+                elif job_ce_status == "HELD" and job_sub_status != 6:
                     self.db.set_job_submit_status(self.job_sub_id,6)
-                elif self.job_condor_status_code[job_ce_status] == "Removing" and job_sub_status != 13:
+                elif job_ce_status == "REMOVING" and job_sub_status != 13:
                     self.db.set_job_submit_status(self.job_sub_id,13)
-                elif self.job_condor_status_code[job_ce_status] == "Transferring Output" and job_sub_status != 14:
+                elif job_ce_status == "TRANSFERRING OUTPUT" and job_sub_status != 14:
                     self.db.set_job_submit_status(self.job_sub_id,14)
-                elif self.job_condor_status_code[job_ce_status] == "Suspended" and job_sub_status != 15:
+                elif job_ce_status == "SUSPENDED" and job_sub_status != 15:
                     self.db.set_job_submit_status(self.job_sub_id,15)
 
                 if self.job_quit:
@@ -304,7 +312,6 @@ class ProdJob:
             time.sleep(self.job_submission_delay)
 
         # Save submission info to DB
-        #self.db.set_job_submitted(self.job_sub_id,"%s %s %s"%(self.ce,self.ce_host,self.ce_job_id))
         self.full_ce_job_id = "%s/%s"%(self.ce,self.ce_job_id)
         if self.debug: print "CE job id is %s"%self.full_ce_job_id
         self.db.set_job_submitted(self.job_sub_id,self.full_ce_job_id)
@@ -316,12 +323,7 @@ class ProdJob:
   
     def get_job_ce_status(self):
     
-        status      = "UNDEF"
-        exit_code   = ""
-        worker_node = "UNKNOWN"
-        local_user  = "UNKNOWN"
-        delegation  = ""
-        description = ""
+        job_info = {}
 
         # Retrieve status of job
         job_status_cmd = "condor_q -long -pool %s -name %s %s"%(self.ce,self.ce_host,self.ce_job_id)
@@ -334,16 +336,21 @@ class ProdJob:
             if rc == 0:
                 # If condor_q succeeds but output is empty, the job was cancelled with condor_rm
                 if out == "":
-                    status = "CANCELLED"
+                    job_info["status"] = "CANCELLED"
                 else:
                     for l in iter(out.splitlines()):
                         if self.debug >1: print l
                         r = re.match("^\s*JobStatus\s+=\s+(\d+)\s*$",l)
-                        if r: status = r.group(1)
+                        if r:
+                            if r.group(1) in self.job_condor_status_code:
+                                job_info["status"] = self.job_condor_status_code[r.group(1)]
+                            else:
+                                print "  WARNING condor_q returned unknown job status '%s'"%r.group(1)
+                                job_info["status"] = "UNDEF"
                         r = re.match("^\s*ExitCode\s+=\s+(\d+)\s*$",l)
-                        if r: exit_code = r.group(1)
+                        if r: job_info["exit_code"] = r.group(1)
                         r = re.match("^\s*Owner\s+=\s+\"(\S+)\"\s*$",l)
-                        if r: local_user = r.group(1)
+                        if r: job_info["local_user"] = r.group(1)
                 break
 
             print "  WARNING condor_q command returned error code %d"%rc
@@ -360,7 +367,7 @@ class ProdJob:
             # Wait a bit before retrying
             time.sleep(self.retries_delay)
 
-        return (status,exit_code,worker_node,local_user,delegation,description)
+        return job_info
   
     def finalize_job(self):
     

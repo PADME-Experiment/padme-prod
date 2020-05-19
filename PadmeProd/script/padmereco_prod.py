@@ -217,7 +217,7 @@ exit $rc
         #data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
         #print ">",data_copy_cmd
         #rc = subprocess.call(data_copy_cmd.split())
-        rc = self.export_file(data_src_url,data_dst_url)
+        rc = export_file(data_src_url,data_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
             data_ok = False
