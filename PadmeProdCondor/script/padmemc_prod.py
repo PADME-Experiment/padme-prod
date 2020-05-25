@@ -181,7 +181,8 @@ exit $rc
 
     rc_mc = p.returncode
 
-    print "PADMEMC program ended at %s (UTC) with return code %s"%(now_str(),rc_mc)
+    print "Program ending at %s (UTC)"%now_str()
+    print "Script exited with return code %s"%rc_mc
 
     if rc_mc != 0 or run_problems:
         if run_problems:

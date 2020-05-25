@@ -190,7 +190,8 @@ exit $rc
 
     rc_reco = p.returncode
 
-    print "PADMERECO program ended at %s (UTC) with return code %s"%(now_str(),rc_reco)
+    print "Program ending at %s (UTC)"%now_str()
+    print "Script exited with return code %s"%rc_reco
 
     if rc_reco != 0 or run_problems:
         if run_problems:
