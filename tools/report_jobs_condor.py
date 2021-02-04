@@ -10,6 +10,7 @@ import MySQLdb
 
 # List of endpoints to check
 ENDPOINTS = [
+    "atlasce3.lnf.infn.it:9619",
     "ce01-htc.cr.cnaf.infn.it:9619",
     "ce02-htc.cr.cnaf.infn.it:9619",
     "ce03-htc.cr.cnaf.infn.it:9619",
@@ -17,7 +18,14 @@ ENDPOINTS = [
 ]
 
 # Name of job owner to check
-OWNER = "padme008"
+#OWNER = "padme008"
+OWNERS = [
+    "padme003",
+    "padme008",
+    "padme008",
+    "padme008",
+    "padme008"
+]
 
 # "ALL": Show all jobs belonging to owner
 # "PROD": Show only jobs associted to a production
@@ -102,7 +110,11 @@ def main(argv):
             print_help()
             sys.exit(0)
 
-    for endpoint in ENDPOINTS:
+    #for endpoint in ENDPOINTS:
+    for ep in range(len(ENDPOINTS)):
+
+        endpoint = ENDPOINTS[ep]
+        owner = OWNERS[ep]
 
         (ep_host,ep_port) = endpoint.split(":")
         cmd = "condor_q -pool %s -name %s"%(endpoint,ep_host)
@@ -118,7 +130,8 @@ def main(argv):
         # Get all jobs in this endpoint belonging to our user
         job_list = []
         for l in iter(out.splitlines()):
-            r = re.match("^\s*%s\s+ID:\s+(\d+)\s+.*$"%OWNER,l)
+            #r = re.match("^\s*%s\s+ID:\s+(\d+)\s+.*$"%OWNER,l)
+            r = re.match("^\s*%s\s+ID:\s+(\d+)\s+.*$"%owner,l)
             if r: job_list.append(r.group(1))
 
         # Get info about all jobs found
@@ -147,7 +160,8 @@ def main(argv):
             prod = job_production(jobid)
 
             if SHOW_JOB == "ALL" or prod != "":
-                print_job(jobid,status,exitcode,OWNER,prod)
+                #print_job(jobid,status,exitcode,OWNER,prod)
+                print_job(jobid,status,exitcode,owner,prod)
 
 # Execution starts here
 if __name__ == "__main__": main(sys.argv[1:])
