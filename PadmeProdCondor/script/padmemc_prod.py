@@ -73,7 +73,10 @@ def main(argv):
 
     job_dir = os.getcwd()
     host_name = socket.gethostname()
-    user_name = getpass.getuser()
+    try:
+        user_name = getpass.getuser()
+    except:
+        user_name = "UNKNOWN"
 
     print "=== PadmeMC Production %s Job %s ==="%(prod_name,job_name)
     print "Job starting at %s (UTC)"%now_str()
