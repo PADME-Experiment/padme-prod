@@ -10,9 +10,8 @@ import subprocess
 import shlex
 import select
 import errno
-
-PROXY_FILE = ""
-PROXY_RENEW_TIME = 6*3600
+import getpass
+import socket
 
 def now_str():
 
@@ -24,30 +23,17 @@ def get_adler32(outfile):
     p = subprocess.Popen(shlex.split(adler_cmd),stdin=None,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     return p.communicate()[0].strip()
 
-def renew_proxy_handler(signum,frame):
-
-    global PROXY_FILE
-    global PROXY_RENEW_TIME
-
-    # Obtain new VOMS proxy from long-lived proxy
-    proxy_cmd = "voms-proxy-init --noregen --cert %s --key %s --voms vo.padme.org --valid 24:00"%(PROXY_FILE,PROXY_FILE)
-    print ">",proxy_cmd
-    rc = subprocess.call(proxy_cmd.split())
-
-    # Reset alarm
-    signal.alarm(PROXY_RENEW_TIME)
-
 def export_file(src_url,dst_url):
 
     print "Copying",src_url,"to",dst_url
 
     # Check if destination file already exists and rename it
-    # This can happen if job log retrieval fails after the job
-    # has successfully completed
+    # This can happen if job log retrieval fails after the job has successfully completed
     stat_cmd = "gfal-stat %s"%dst_url
     print ">",stat_cmd
-    rc = subprocess.call(stat_cmd.split())
-    if rc == 0:
+    p = subprocess.Popen(shlex.split(stat_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    if p.returncode == 0:
         print "WARNING - File %s exists. Attempting to rename it."%dst_url
         idx = 0
         while idx<100:
@@ -65,37 +51,56 @@ def export_file(src_url,dst_url):
                 print "ERROR - File %s - Too many copies. Cannot rename existing file."%dst_url
                 return 1
 
+    # Now execute the copy command
     copy_cmd = "gfal-copy %s %s"%(src_url,dst_url)
     print ">",copy_cmd
-    rc = subprocess.call(copy_cmd.split())
-
-    return rc
+    p = subprocess.Popen(shlex.split(copy_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    print out
+    if p.returncode != 0:
+        sys.stderr.write(err)
+    return p.returncode
 
 def main(argv):
 
-    global PROXY_FILE
-    global PROXY_RENEW_TIME
+    # Immediately create an empty shell script to avoid Condor holding jobs when this file is not found
+    open("job.sh","w").close()
 
     # Top CVMFS directory for PadmeMC
     padmemc_cvmfs_dir = "/cvmfs/padme.infn.it/PadmeMC"
 
-    (macro_file,PROXY_FILE,prod_name,job_name,mc_version,storage_dir,srm_uri,rndm_seeds) = argv
+    (macro_file,prod_name,job_name,mc_version,storage_dir,srm_uri,rndm_seeds) = argv
 
+    # Get some info about the environment (host,user,job directory)
     job_dir = os.getcwd()
+    try:
+        host_name = socket.gethostname()
+    except:
+        host_name = "UNKNOWN"
+    try:
+        user_name = getpass.getuser()
+    except:
+        user_name = "UNKNOWN"
+
+    # Get processor model (useful to troubleshoot variations in execution time)
+    processor = "UNKNOWN"
+    if os.path.exists("/proc/cpuinfo"):
+        with open("/proc/cpuinfo","r") as cpuinfo:
+            for l in cpuinfo:
+                m = re.match("^\s*model name\s+:\s+(.*)$",l)
+                if m:
+                    processor = m.group(1)
+                    break
 
     print "=== PadmeMC Production %s Job %s ==="%(prod_name,job_name)
     print "Job starting at %s (UTC)"%now_str()
-    print "Job running on node %s as user %s in dir %s"%(os.getenv('HOSTNAME'),os.getenv('USER'),job_dir)
-
+    print "Job running on node %s as user %s in dir %s"%(host_name,user_name,job_dir)
+    print "Processor %s"%processor
     print "PadmeMC version %s"%mc_version
-    print "SRM server URI %s"%srm_uri
+    print "Storage server URI %s"%srm_uri
     print "Storage directory %s"%storage_dir
     print "MC macro file %s"%macro_file
-    print "Proxy file %s"%PROXY_FILE
     print "Random seeds %s"%rndm_seeds
-
-    # Change permission rights for long-lived proxy (must be 600)
-    os.chmod(PROXY_FILE,0600)
 
     # Extract random seeds
     r = re.match("(\d+),(\d+)",rndm_seeds)
@@ -126,10 +131,6 @@ def main(argv):
     # Create local link to GDML files needed for geometry definition
     padmemc_gdml_dir = "%s/gdml"%padmemc_version_dir
     os.symlink(padmemc_gdml_dir,"gdml")
-
-    # Enable timer to renew VOMS proxy every 6h
-    signal.signal(signal.SIGALRM,renew_proxy_handler)
-    signal.alarm(PROXY_RENEW_TIME)
 
     # Prepare shell script to run PadmeMC
     script = """#!/bin/bash
@@ -174,7 +175,7 @@ exit $rc
     while True:
 
         # Handle script output and error streams with select.
-        # Trap "Interrupted system call" error (happens when proxy is renewed)
+        # Trap "Interrupted system call" error (probably not needed)
         reads = [p.stdout.fileno(),p.stderr.fileno()]
         try:
             ret = select.select(reads,[],[],1.)
@@ -208,6 +209,12 @@ exit $rc
         print "Output files will not be saved to tape storage."
         sys.exit(1)
 
+    # Show info about available proxy
+    print "--- VOMS proxy information ---"
+    proxy_cmd = "voms-proxy-info --all"
+    print ">",proxy_cmd
+    rc = subprocess.call(proxy_cmd.split())
+
     print "--- Saving output files ---"
 
     data_ok = True
@@ -221,10 +228,6 @@ exit $rc
         data_dst_file = "%s_%s_data.root"%(prod_name,job_name)
         data_dst_url = "%s%s/%s"%(srm_uri,storage_dir,data_dst_file)
 
-        #print "Copying",data_src_url,"to",data_dst_url
-        #data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
-        #print ">",data_copy_cmd
-        #rc = subprocess.call(data_copy_cmd.split())
         rc = export_file(data_src_url,data_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
@@ -248,10 +251,6 @@ exit $rc
         hsto_dst_file = "%s_%s_hsto.root"%(prod_name,job_name)
         hsto_dst_url = "%s%s/%s"%(srm_uri,storage_dir,hsto_dst_file)
 
-        #print "Copying %s to %s"%(hsto_src_url,hsto_dst_url)
-        #hsto_copy_cmd = "gfal-copy %s %s"%(hsto_src_url,hsto_dst_url)
-        #print ">",hsto_copy_cmd
-        #rc = subprocess.call(hsto_copy_cmd.split())
         rc = export_file(hsto_src_url,hsto_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
@@ -264,7 +263,6 @@ exit $rc
         print "WARNING File hsto.root does not exist in current directory"
         hsto_ok = False
 
-    #if not (os.path.exists("data.root") and os.path.exists("hsto.root")): sys.exit(1)
     if not (data_ok and hsto_ok):
         sys.exit(1)
 

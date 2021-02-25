@@ -190,7 +190,8 @@ exit $rc
 
     rc_reco = p.returncode
 
-    print "PADMERECO program ended at %s (UTC) with return code %s"%(now_str(),rc_reco)
+    print "Program ending at %s (UTC)"%now_str()
+    print "Script exited with return code %s"%rc_reco
 
     if rc_reco != 0 or run_problems:
         if run_problems:
@@ -217,7 +218,7 @@ exit $rc
         #data_copy_cmd = "gfal-copy %s %s"%(data_src_url,data_dst_url)
         #print ">",data_copy_cmd
         #rc = subprocess.call(data_copy_cmd.split())
-        rc = self.export_file(data_src_url,data_dst_url)
+        rc = export_file(data_src_url,data_dst_url)
         if rc:
             print "WARNING - gfal-copy returned error status %d"%rc
             data_ok = False

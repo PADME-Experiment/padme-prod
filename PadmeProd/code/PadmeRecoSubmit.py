@@ -31,14 +31,12 @@ PH = ProxyHandler()
 # List of available submission sites and corresponding CE nodes
 PADME_CE_NODE_LIST = {
     "LNF":   [ "atlasce1.lnf.infn.it", "atlasce2.lnf.infn.it", "atlasce4.lnf.infn.it" ],
-    "CNAF":  [ "ce04-lcg.cr.cnaf.infn.it" ],
     "SOFIA": [ "cream.grid.uni-sofia.bg" ]
 }
 
 # Name of default queue to use for each site. Can be changed using -Q argument
 PADME_CE_QUEUE = {
     "LNF":   "cream-pbs-padme_c7",
-    "CNAF":  "cream-lsf-padme",
     "SOFIA": "cream-pbs-cms"
 }
 
