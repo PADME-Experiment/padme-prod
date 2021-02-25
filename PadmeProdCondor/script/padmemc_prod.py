@@ -71,19 +71,33 @@ def main(argv):
 
     (macro_file,prod_name,job_name,mc_version,storage_dir,srm_uri,rndm_seeds) = argv
 
+    # Get some info about the environment (host,user,job directory)
     job_dir = os.getcwd()
-    host_name = socket.gethostname()
+    try:
+        host_name = socket.gethostname()
+    except:
+        host_name = "UNKNOWN"
     try:
         user_name = getpass.getuser()
     except:
         user_name = "UNKNOWN"
 
+    # Get processor model (useful to troubleshoot variations in execution time)
+    processor = "UNKNOWN"
+    if os.path.exists("/proc/cpuinfo"):
+        with open("/proc/cpuinfo","r") as cpuinfo:
+            for l in cpuinfo:
+                m = re.match("^\s*model name\s+:\s+(.*)$",l)
+                if m:
+                    processor = m.group(1)
+                    break
+
     print "=== PadmeMC Production %s Job %s ==="%(prod_name,job_name)
     print "Job starting at %s (UTC)"%now_str()
     print "Job running on node %s as user %s in dir %s"%(host_name,user_name,job_dir)
-
+    print "Processor %s"%processor
     print "PadmeMC version %s"%mc_version
-    print "SRM server URI %s"%srm_uri
+    print "Storage server URI %s"%srm_uri
     print "Storage directory %s"%storage_dir
     print "MC macro file %s"%macro_file
     print "Random seeds %s"%rndm_seeds
