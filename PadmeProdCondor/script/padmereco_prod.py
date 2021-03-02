@@ -70,7 +70,7 @@ def main(argv):
 
     output_file = "data.root"
 
-    (input_list,prod_name,job_name,reco_version,storage_dir,srm_uri) = argv
+    (input_list,prod_name,job_name,reco_version,configuration,storage_dir,srm_uri) = argv
 
     job_dir = os.getcwd()
     try:
@@ -119,10 +119,16 @@ def main(argv):
         exit(2)
     os.symlink(config_dir,"config")
 
-    # Check if PadmeReco configuration file is available
+    # Check if Padme configuration file is available
     padmereco_init_file = "%s/padme-configure.sh"%config_dir
     if not os.path.exists(padmereco_init_file):
         print "ERROR File %s not found"%padmereco_init_file
+        exit(2)
+
+    # Check if PadmeReco configuration file is available
+    padmereco_config_file = "%s/%s"%(config_dir,configuration)
+    if not os.path.exists(padmereco_config_file):
+        print "ERROR File %s not found"%padmereco_config_file
         exit(2)
 
     # Prepare shell script to run PadmeReco
@@ -143,7 +149,7 @@ else
     echo "PADMERECO_EXE = $PADMERECO_EXE"
 fi
 echo "LD_LIBRARY_PATH = $LD_LIBRARY_PATH"
-$PADMERECO_EXE -l %s -o %s -n 0
+$PADMERECO_EXE -l %s -o %s -n 0 -c %s
 rc=$?
 if [ $rc -ne 0 ]; then
   echo "*** ERROR *** PadmeReco returned error code $rc"
@@ -153,7 +159,7 @@ ls -l
 date
 echo "--- Ending PADMERECO production ---"
 exit $rc
-"""%(padmereco_init_file,input_list,output_file)
+"""%(padmereco_init_file,input_list,output_file,padmereco_config_file)
     with open("job.sh","w") as sf: sf.write(script)
 
     # Run job script sending its output/error to stdout/stderr

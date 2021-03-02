@@ -58,6 +58,7 @@ PROD_CE_PORT = 9619
 PROD_RUN_SITE = "LNF"
 PROD_STORAGE_SITE = "LNF"
 PROD_RECO_VERSION = ""
+PROD_CONFIGURATION = "PadmeReconstruction.cfg"
 PROD_YEAR = ""
 PROD_MYPROXY_SERVER = "myproxy.cnaf.infn.it"
 PROD_MYPROXY_PORT = 7512
@@ -71,10 +72,11 @@ PROD_DESCRIPTION = "TEST"
 
 def print_help():
 
-    print "PadmeRecoProd -r <run_name> -v <version> [-y <year>] [-j <files_per_job>] [-n <prod_name>] [-s <submission_site>] [-S <source_uri>] [-C <CE_node> [-P <CE_port>]] [-d <storage_site>] [-D <description>] [-V] [-h]"
+    print "PadmeRecoProd -r <run_name> -v <version> [-y <year>] [-c <configuration>] [-j <files_per_job>] [-n <prod_name>] [-s <submission_site>] [-S <source_uri>] [-C <CE_node> [-P <CE_port>]] [-d <storage_site>] [-D <description>] [-V] [-h]"
     print "  -r <run_name>\t\tname of the run to process"
     print "  -v <version>\t\tversion of PadmeReco to use for production. Must be installed on CVMFS."
     print "  -y <year>\t\tyear of run. N.B. used only if run name is not self-documenting"
+    print "  -c <configuration>\ttop PadmeReco configuration file to use. Default: %s"%PROD_CONFIGURATION
     print "  -j <files_per_job>\tnumber of rawdata files to be reconstructed by each job. Default: %d"%PROD_FILES_PER_JOB
     print "  -n <prod_name>\tname for the production. Default: <run_name>_<version>"
     print "  -s <submission_site>\tsite to be used for job submission. Allowed: %s. Default: %s"%(",".join(PADME_CE_NODE.keys()),PROD_RUN_SITE)
@@ -149,7 +151,7 @@ def main(argv):
     global PROD_DESCRIPTION
 
     try:
-        opts,args = getopt.getopt(argv,"hVr:y:n:j:s:d:S:C:P:v:D:",[])
+        opts,args = getopt.getopt(argv,"hVr:y:c:n:j:s:d:S:C:P:v:D:",[])
     except getopt.GetoptError as e:
         print "Option error: %s"%str(e)
         print_help()
@@ -165,6 +167,8 @@ def main(argv):
             PROD_RUN_NAME = arg
         elif opt == '-y':
             PROD_YEAR = arg
+        elif opt == '-c':
+            PROD_CONFIGURATION = arg
         elif opt == '-n':
             PROD_NAME = arg
         elif opt == '-v':
@@ -259,6 +263,7 @@ def main(argv):
     print "- Starting production %s"%PROD_NAME
     print "- Processing run %s"%PROD_RUN_NAME
     print "- PadmeReco version %s"%PROD_RECO_VERSION
+    print "- Top configuration file %s"%PROD_CONFIGURATION
     print "- Each job will process %d rawdata files"%PROD_FILES_PER_JOB
     print "- Submitting jobs to CE %s"%" ".join(PROD_CE)
     print "- Main production directory: %s"%PROD_DIR
@@ -357,7 +362,8 @@ def main(argv):
     # Create new production in DB
     print "- Creating new production in DB"
     proxy_info = "%s:%d %s %s"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT,PROD_MYPROXY_NAME,PROD_MYPROXY_PASSWD)
-    prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,PROD_DESCRIPTION,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,proxy_info,len(job_file_lists))
+    prod_info = "%s - %s"%(PROD_CONFIGURATION,PROD_DESCRIPTION)
+    prodId = DB.create_recoprod(PROD_NAME,PROD_RUN_NAME,prod_info,PROD_CE,PROD_RECO_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,proxy_info,len(job_file_lists))
 
     # Create job structures
     print "- Creating directory structure for production jobs"
@@ -394,7 +400,7 @@ def main(argv):
             jf.write("+Owner = undefined\n")
             jf.write("executable = /usr/bin/python\n")
             jf.write("transfer_executable = False\n")
-            jf.write("arguments = -u job.py job.list %s %s %s %s %s %s\n"%(PROD_NAME,jobName,PROD_RECO_VERSION,PROD_STORAGE_DIR,PROD_SRM))
+            jf.write("arguments = -u job.py job.list %s %s %s %s %s %s %s\n"%(PROD_NAME,jobName,PROD_RECO_VERSION,PROD_CONFIGURATION,PROD_STORAGE_DIR,PROD_SRM))
             jf.write("output = job.out\n")
             jf.write("error = job.err\n")
             jf.write("log = job.log\n")
