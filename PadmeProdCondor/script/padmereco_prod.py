@@ -31,7 +31,7 @@ def export_file(src_url,dst_url):
     # This can happen if job log retrieval fails after the job has successfully completed
     stat_cmd = "gfal-stat %s"%dst_url
     print ">",stat_cmd
-    rc = subprocess.call(stat_cmd.split())
+    rc = subprocess.call(shlex.split(stat_cmd))
     if rc == 0:
         print "WARNING - File %s exists. Attempting to rename it."%dst_url
         idx = 0
@@ -39,7 +39,7 @@ def export_file(src_url,dst_url):
             new_url = "%s.%02d"%(dst_url,idx)
             rename_cmd = "gfal-rename %s %s"%(dst_url,new_url)
             print ">",rename_cmd
-            rc = subprocess.call(rename_cmd.split())
+            rc = subprocess.call(shlex.split(rename_cmd))
             if rc == 0:
                 # Rename succeeded: we can proceed with the copy
                 print "WARNING - Existing file renamed to %s"%new_url
@@ -112,12 +112,11 @@ def main(argv):
         print "WARNING Directory %s not found (%d) - Pause and try again"%(padmereco_version_dir,n_try)
         time.sleep(5)
 
-    # Create local soft link to the config directory
+    # Define location of config directory
     config_dir = "%s/config"%padmereco_version_dir
     if not os.path.isdir(config_dir):
         print "ERROR Directory %s not found"%config_dir
         exit(2)
-    os.symlink(config_dir,"config")
 
     # Check if Padme configuration file is available
     padmereco_init_file = "%s/padme-configure.sh"%config_dir
@@ -125,8 +124,9 @@ def main(argv):
         print "ERROR File %s not found"%padmereco_init_file
         exit(2)
 
-    # Check if PadmeReco configuration file is available
-    padmereco_config_file = "%s/%s"%(config_dir,configuration)
+    # Create soft link to config dir and check if required PadmeReco configuration file is available
+    os.symlink(config_dir,"config")
+    padmereco_config_file = "config/%s"%configuration
     if not os.path.exists(padmereco_config_file):
         print "ERROR File %s not found"%padmereco_config_file
         exit(2)
@@ -149,7 +149,9 @@ else
     echo "PADMERECO_EXE = $PADMERECO_EXE"
 fi
 echo "LD_LIBRARY_PATH = $LD_LIBRARY_PATH"
-$PADMERECO_EXE -l %s -o %s -n 0 -c %s
+cmd="$PADMERECO_EXE -l %s -o %s -n 0 -c %s"
+echo $cmd
+$cmd
 rc=$?
 if [ $rc -ne 0 ]; then
   echo "*** ERROR *** PadmeReco returned error code $rc"
@@ -210,7 +212,7 @@ exit $rc
     print "--- VOMS proxy information ---"
     proxy_cmd = "voms-proxy-info --all"
     print ">",proxy_cmd
-    rc = subprocess.call(proxy_cmd.split())
+    rc = subprocess.call(shlex.split(proxy_cmd))
 
     print "--- Saving output files ---"
 

@@ -73,9 +73,9 @@ class PadmeMCDB:
         if n: return True
         return False
 
-    def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs):
+    def create_recoprod(self,name,run,description,prod_ce,reco_version,prod_dir,storage_uri,storage_dir,proxy_info,n_jobs):
 
-        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_file,n_jobs)
+        prod_id = self.create_prod(name,prod_ce,prod_dir,storage_uri,storage_dir,proxy_info,n_jobs)
 
         self.check_db()
         c = self.conn.cursor()

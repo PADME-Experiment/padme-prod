@@ -89,7 +89,7 @@ class PadmeProdServer:
         ce_list = list(prod_ce.split(" "))
 
         # Configure proxy renewal service
-        r = re.match("^\s*(\S+):(\d+)\s+(\S+)\s+(\S+)\s*$",proxy_info)
+        r = re.match("^\s*(\S+):(\d+):(\S+):(\S+)\s*$",proxy_info)
         if r:
             (self.ph.myproxy_server,self.ph.myproxy_port,self.ph.myproxy_name,self.ph.myproxy_passwd) = r.groups()
         else:
