@@ -12,37 +12,37 @@ SITE_INFO = {
     "LNF":  [
         {
             "ENDPOINT": "atlasce3.lnf.infn.it:9619",
-            "OWNERS": ("padme003",)
+            "OWNERS": ["padme003"]
         }
     ],
     "CNAF": [
         #{
         #    "ENDPOINT": "ce01-htc.cr.cnaf.infn.it:9619",
-        #    "OWNERS": ("padme008",)
+        #    "OWNERS": ["padme008"]
         #},
         {
             "ENDPOINT": "ce02-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ("padme008",)
+            "OWNERS": ["padme008"]
         },
         {
             "ENDPOINT": "ce03-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ("padme008",)
+            "OWNERS": ["padme008"]
         },
         {
             "ENDPOINT": "ce04-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ("padme008",)
+            "OWNERS": ["padme008"]
         },
         {
             "ENDPOINT": "ce05-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ("padme008",)
+            "OWNERS": ["padme008"]
         },
         {
             "ENDPOINT": "ce06-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ("padme008",)
+            "OWNERS": ["padme008"]
         },
         {
             "ENDPOINT": "ce07-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ("padme008",)
+            "OWNERS": ["padme008"]
         }
     ]
 }
@@ -109,7 +109,7 @@ CONDOR_JOB_STATUS = {
 def print_help():
     print "report_jobs_condor [-S site] [-O owner] [-A|-P] [-h]"
     print "-S <site>\tSite to query. Default: %s"%SITE
-    print "-O <owner>\tName of the job owner. Default: varies with site and endpoint"
+    print "-O <owner>\tName of the job owner. Can be repeated. ALL shows all users. Default: varies with site and endpoint"
     print "-A|-P\t\tShow all jobs (-A) or only jobs associated to a production (-P). Default: %s"%SHOW_JOB
     print "-h\t\tShow this help message and exit"
 
@@ -150,11 +150,13 @@ def main(argv):
         print_help()
         sys.exit(2)
 
+    owners = []
     for opt,arg in opts:
         if opt == '-S':
             SITE = arg
         elif opt == '-O':
-            OWNER = arg
+            #OWNER = arg
+            owners.append(arg)
         elif opt == '-P':
             SHOW_JOB = "PROD"
         elif opt == '-A':
@@ -170,8 +172,11 @@ def main(argv):
     for ep in range(len(SITE_INFO[SITE])):
 
         ENDPOINT = SITE_INFO[SITE][ep]["ENDPOINT"]
-        OWNERS = SITE_INFO[SITE][ep]["OWNERS"]
-        print ENDPOINT,OWNERS
+        if len(owners) == 0:
+            OWNERS = SITE_INFO[SITE][ep]["OWNERS"]
+        else:
+            OWNERS = owners
+        #print ENDPOINT,OWNERS
 
         (ep_host,ep_port) = ENDPOINT.split(":")
         cmd = "condor_q -long -pool %s -name %s"%(ENDPOINT,ep_host)
@@ -228,7 +233,7 @@ def main(argv):
                 #print owner,status,jobid,prod,exitcode,hold_reason
 
                 #if owner == OWNER:
-                if owner in OWNERS:
+                if (owner in OWNERS) or ("ALL" in OWNERS):
                     #prod = job_production(jobid)
                     if SHOW_JOB == "ALL" or prod != "":
                         if prod == "": prod = "NO PRODUCTION"
