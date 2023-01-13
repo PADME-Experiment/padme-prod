@@ -232,7 +232,7 @@ def show_fast(endpoint,owners):
 
     for l in iter(out.splitlines()):
 
-        r = re.match("^\s*([\d\.]+)\s+(\S+)\s+\d\d/\d\d\s+\d\d:\d\d\s+(\S+)\s+(\S+)\s+.*$",l)
+        r = re.match("^\s*([\d\.]+)\s+(\S+)\s+\S+/\S+\s+\S+:\S+\s+(\S+)\s+(\S+)\s+.*$",l)
         if r:
 
             job_id     = r.group(1)

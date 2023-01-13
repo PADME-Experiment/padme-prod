@@ -197,6 +197,9 @@ class ProdJob:
                 # Retrieve output files
                 (finalize_ok,file_list) = self.finalize_job()
 
+                # Always cancel completed jobs (to be reviewed)
+                self.cancel_job()
+
                 if job_exit_code != "0":
 
                     print "  WARNING job is Completed but with RC %s"%job_exit_code
@@ -223,10 +226,12 @@ class ProdJob:
                         self.db.close_job_submit(self.job_sub_id,7,job_description,job_exit_code)
                         self.job_status = 2
                         self.db.close_job(self.job_id,self.job_status)
+                        #self.cancel_job()
                         return "SUCCESSFUL"
                     else:
                         print "  WARNING job is Completed, RC is 0, output retrieval succeeded but parsing failed"
                         self.db.close_job_submit(self.job_sub_id,107,job_description,job_exit_code)
+                        #self.cancel_job()
 
             else:
 

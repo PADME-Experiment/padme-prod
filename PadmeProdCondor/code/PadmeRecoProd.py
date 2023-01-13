@@ -144,6 +144,8 @@ def main(argv):
     global PROD_STORAGE_SITE
     global PROD_RECO_VERSION
     global PROD_CONFIGURATION
+    global PROD_MYPROXY_SERVER
+    global PROD_MYPROXY_PORT
     global PROD_MYPROXY_NAME
     global PROD_MYPROXY_PASSWD
     global PROD_YEAR
@@ -216,19 +218,20 @@ def main(argv):
         print_help()
         sys.exit(2)
 
-    # Decode MyProxy information
-    print "MyProxy info is",myproxy_info
-    #r = re.match("^\s*(\S+):(\d+)\s+(\S+)\s+(\S+)\s*$",myproxy_info)
-    r = re.match("^\s*(\S+):(\d+):(\S+):(\S+)\s*$",myproxy_info)
-    if r:
-        PROD_MYPROXY_SERVER = r.group(1)
-        PROD_MYPROXY_PORT   = r.group(2)
-        PROD_MYPROXY_NAME   = r.group(3)
-        PROD_MYPROXY_PASSWD = r.group(4)
-    else:
-        print "*** ERROR *** Unable to decode MyProxy info: \"%s\"."%myproxy_info
-        print_help()
-        sys.exit(2)
+    # Decode MyProxy information if given by the user
+    if myproxy_info:
+        #print "MyProxy info is",myproxy_info
+        #r = re.match("^\s*(\S+):(\d+)\s+(\S+)\s+(\S+)\s*$",myproxy_info)
+        r = re.match("^\s*(\S+):(\d+):(\S+):(\S+)\s*$",myproxy_info)
+        if r:
+            PROD_MYPROXY_SERVER = r.group(1)
+            PROD_MYPROXY_PORT   = r.group(2)
+            PROD_MYPROXY_NAME   = r.group(3)
+            PROD_MYPROXY_PASSWD = r.group(4)
+        else:
+            print "*** ERROR *** Unable to decode MyProxy info: \"%s\"."%myproxy_info
+            print_help()
+            sys.exit(2)
 
     # Choose submission CE
     if PROD_CE_NODE:
@@ -292,6 +295,37 @@ def main(argv):
             print str(child)
             sys.exit(2)
 
+    # Get position of local proxy to be sent to Condor and check if it has enough time left
+    voms_proxy_local = ""
+    voms_proxy_timeleft = ""
+    voms_cmd = "voms-proxy-info"
+    if PROD_DEBUG: print "> %s"%voms_cmd
+    p = subprocess.Popen(shlex.split(voms_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out,err) = p.communicate()
+    if p.returncode == 0:
+        for l in iter(out.splitlines()):
+            if PROD_DEBUG > 1: print l
+            r = re.match("^\s*path\s+:\s+(\S+)\s*$",l)
+            if r:
+                voms_proxy_local = r.group(1)
+            r = re.match("^\s*timeleft\s+:\s+(\S+)\s*$",l)
+            if r:
+                voms_proxy_timeleft = r.group(1)
+    if voms_proxy_local == "":
+        print "*** ERROR *** Unable get path to local VOMS proxy"
+        sys.exit(2)
+    if voms_proxy_timeleft == "":
+        print "*** ERROR *** Unable get expiration time of local VOMS proxy"
+        sys.exit(2)
+    r = re.match("^(\d\d):(\d\d):(\d\d)$",voms_proxy_timeleft)
+    if r:
+        if int(r.group(1)) < 2:
+            print "*** ERROR *** Local VOMS proxy will expire in less than 2 hours: please renew it and retry"
+            sys.exit(2)
+    else:
+        print "*** ERROR *** Unable to decode expiration time of local VOMS proxy: \"%s\""%voms_proxy_timeleft
+        sys.exit(2)
+
     # If production directory was not specified, use default
     if PROD_DIR == "":
         version_dir = "prod/%s"%PROD_RECO_VERSION
@@ -324,26 +358,9 @@ def main(argv):
     print "- Storage SRM: %s"%PROD_SRM
     print "- Storage directory: %s"%PROD_STORAGE_DIR
     print "- MyProxy name: %s"%PROD_MYPROXY_NAME
+    print "- Local VOMS proxy at %s"%voms_proxy_local
     if PROD_DEBUG:
         print "- Debug level: %d"%PROD_DEBUG
-
-    # Get position of local proxy to be sent to Condor
-    voms_proxy_local = ""
-    voms_cmd = "voms-proxy-info"
-    if PROD_DEBUG: print "> %s"%voms_cmd
-    p = subprocess.Popen(shlex.split(voms_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    (out,err) = p.communicate()
-    if p.returncode == 0:
-        for l in iter(out.splitlines()):
-            if PROD_DEBUG > 1: print l
-            r = re.match("^\s*path\s+:\s+(\S+)\s*$",l)
-            if r:
-                voms_proxy_local = r.group(1)
-                break
-    if voms_proxy_local == "":
-        print "*** ERROR *** Unable get path to local VOMS proxy"
-        sys.exit(2)
-    print "- Local VOMS proxy at %s"%voms_proxy_local
 
     # Get list of files for run to reconstruct
     # All files are assumed to be on the LNF SE and available via the ROOTX protocol
