@@ -37,9 +37,10 @@ PADME_SRM_URI = {
 }
 
 # List of available submission sites and corresponding default Condor CE nodes
+#    "LNF":  ("atlasce1.lnf.infn.it:9619","atlasce3.lnf.infn.it:9619"),
 PADME_CE_NODE = {
-    "LNF":  ("atlasce3.lnf.infn.it:9619",),
-    "CNAF":  ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
+    "LNF":  ("atlasce1.lnf.infn.it:9619",),
+    "CNAF": ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
 }
 
 # Initialize global parameters and set some default values

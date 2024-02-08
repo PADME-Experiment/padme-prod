@@ -80,16 +80,17 @@ def main(argv):
     proxy_cmd = "myproxy-init --proxy_lifetime %d --cred_lifetime %d --voms %s --pshost %s --psport %s --dn_as_username --credname %s --local_proxy"%(PROXY_LIFETIME,MYPROXY_LIFETIME,PROXY_VOMS,MYPROXY_SERVER,MYPROXY_PORT,MYPROXY_NAME)
     if DEBUG: print ">",proxy_cmd
     child = pexpect.spawn(proxy_cmd)
+    if DEBUG: child.logfile_read = sys.stdout
     try:
         child.expect("Enter GRID pass phrase for this identity:")
-        if DEBUG: print child.before
         child.sendline(grid_passwd)
         child.expect("Enter MyProxy pass phrase:")
-        if DEBUG: print child.before
         child.sendline(MYPROXY_PASSWD)
         child.expect("Verifying - Enter MyProxy pass phrase:")
-        if DEBUG: print child.before
         child.sendline(MYPROXY_PASSWD)
+        # Now wait for myproxy-init to finalize before exiting
+        child.wait()
+        child.close()
     except:
         print "*** ERROR *** Unable to register long-lived proxy on %s"%MYPROXY_SERVER
         print str(child)
