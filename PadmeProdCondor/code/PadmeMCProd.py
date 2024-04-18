@@ -38,7 +38,8 @@ PADME_SRM_URI = {
 # List of available submission sites and corresponding default Condor CE nodes
 PADME_CE_NODE = {
     "LNF":  ("atlasce1.lnf.infn.it:9619",),
-    "CNAF":  ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
+    #"CNAF":  ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
+    "CNAF":  ("ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619","ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
 }
 
 # Initialize global parameters and set some default values
@@ -355,7 +356,7 @@ def main(argv):
 
     # Create new production in DB
     print "- Creating new production in DB"
-    proxy_info = "%s:%d %s %s"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT,PROD_MYPROXY_NAME,PROD_MYPROXY_PASSWD)
+    proxy_info = "%s:%d:%s:%s"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT,PROD_MYPROXY_NAME,PROD_MYPROXY_PASSWD)
     prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,proxy_info,PROD_NJOBS)
 
     # Create job structures

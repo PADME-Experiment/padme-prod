@@ -10,8 +10,12 @@ import shlex
 
 SITE_INFO = {
     "LNF":  [
+        #{
+        #    "ENDPOINT": "atlasce3.lnf.infn.it:9619",
+        #    "OWNERS": ["padme003"]
+        #},
         {
-            "ENDPOINT": "atlasce3.lnf.infn.it:9619",
+            "ENDPOINT": "atlasce1.lnf.infn.it:9619",
             "OWNERS": ["padme003"]
         }
     ],
@@ -51,7 +55,8 @@ SITE = "LNF"
 
 ## List of endpoints to check
 #ENDPOINTS = [
-#    "atlasce3.lnf.infn.it:9619",
+##    "atlasce3.lnf.infn.it:9619",
+#    "atlasce1.lnf.infn.it:9619",
 ##    "ce01-htc.cr.cnaf.infn.it:9619",
 #    "ce02-htc.cr.cnaf.infn.it:9619",
 #    "ce03-htc.cr.cnaf.infn.it:9619",
