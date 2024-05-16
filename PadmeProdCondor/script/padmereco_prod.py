@@ -191,7 +191,8 @@ exit $rc
             elif fd == p.stderr.fileno():
                 read = p.stderr.readline()
                 sys.stderr.write(read)
-                if re.match("^.*Error in <TNetXNGFile::Open>: \[ERROR\]",read): run_problems = True
+                #if re.match("^.*Error in <TNetXNGFile::Open>: \[ERROR\]",read): run_problems = True
+                if re.match("^.*Error in <TNetXNGFile::",read): run_problems = True
 
         if p.poll() != None: break
 

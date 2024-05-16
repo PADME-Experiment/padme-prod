@@ -122,21 +122,31 @@ def main(argv):
         print "WARNING Directory %s not found (%d) - Pause and try again"%(padmemc_version_dir,n_try)
         time.sleep(5)
 
+    # Create local link to GDML files needed for geometry definition
+    padmemc_gdml_dir = "%s/gdml"%padmemc_version_dir
+    if not os.path.isdir(padmemc_gdml_dir):
+        print "ERROR Directory %s not found"%padmemc_gdml_dir
+        exit(2)
+    os.symlink(padmemc_gdml_dir,"gdml")
+
+    # Create local link to config directory, possibily containing CalcHEP signal files
+    padmemc_config_dir = "%s/config"%padmemc_version_dir
+    if not os.path.isdir(padmemc_config_dir):
+        print "ERROR Directory %s not found"%padmemc_config_dir
+        exit(2)
+    os.symlink(padmemc_config_dir,"config")
+
     # Check if PadmeMC configuration file is available
-    padmemc_init_file = "%s/config/padme-configure.sh"%padmemc_version_dir
+    padmemc_init_file = "%s/padme-configure.sh"%padmemc_config_dir
     if not os.path.exists(padmemc_init_file):
         print "ERROR File %s not found"%padmemc_init_file
         exit(2)
-
-    # Create local link to GDML files needed for geometry definition
-    padmemc_gdml_dir = "%s/gdml"%padmemc_version_dir
-    os.symlink(padmemc_gdml_dir,"gdml")
 
     # Prepare shell script to run PadmeMC
     script = """#!/bin/bash
 echo "--- Starting PADMEMC production ---"
 date
-. %s
+source %s
 if [ -z "$PADME" ]; then
     echo "Variable PADME is not set: aborting"
     exit 1

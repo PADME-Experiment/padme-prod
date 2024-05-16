@@ -41,7 +41,8 @@ PADME_SRM_URI = {
 PADME_CE_NODE = {
     "LNF":  ("atlasce1.lnf.infn.it:9619",),
     #"CNAF": ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
-    "CNAF": ("ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619","ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
+    #"CNAF": ("ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619","ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
+    "CNAF": ("ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
 }
 
 # Initialize global parameters and set some default values

@@ -39,13 +39,15 @@ PADME_SRM_URI = {
 PADME_CE_NODE = {
     "LNF":  ("atlasce1.lnf.infn.it:9619",),
     #"CNAF":  ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
-    "CNAF":  ("ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619","ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
+    #"CNAF":  ("ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619","ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
+    #"CNAF":  ("ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
+    "CNAF":  ("ce07-htc.cr.cnaf.infn.it:9619",)
 }
 
 # Initialize global parameters and set some default values
 PROD_NAME = ""
 PROD_NJOBS = 0
-PROD_NJOBS_MAX = 1000
+PROD_NJOBS_MAX = 10000
 PROD_MACRO_FILE = ""
 PROD_STORAGE_DIR = ""
 PROD_DIR = ""
@@ -295,7 +297,9 @@ def main(argv):
             random_seeds.append("%d,%d"%(random.randint(0,4294967295),random.randint(0,4294967295)))
 
     # Create long-lived proxy on MyProxy server (also create a local proxy to talk to storage SRM)
-    grid_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
+    grid_passwd = os.getenv("GLOBUS_PASSWORD",default="")
+    if grid_passwd == "":
+        grid_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
     proxy_cmd = "myproxy-init --proxy_lifetime %d --cred_lifetime %d --voms %s --pshost %s --dn_as_username --credname %s --local_proxy"%(PROD_PROXY_LIFETIME,PROD_MYPROXY_LIFETIME,PROD_PROXY_VOMS,PROD_MYPROXY_SERVER,PROD_MYPROXY_NAME)
     if PROD_DEBUG: print ">",proxy_cmd
     child = pexpect.spawn(proxy_cmd)

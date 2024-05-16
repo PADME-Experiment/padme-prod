@@ -24,26 +24,26 @@ SITE_INFO = {
         #    "ENDPOINT": "ce01-htc.cr.cnaf.infn.it:9619",
         #    "OWNERS": ["padme008"]
         #},
-        {
-            "ENDPOINT": "ce02-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ["padme008"]
-        },
-        {
-            "ENDPOINT": "ce03-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ["padme008"]
-        },
-        {
-            "ENDPOINT": "ce04-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ["padme008"]
-        },
-        {
-            "ENDPOINT": "ce05-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ["padme008"]
-        },
-        {
-            "ENDPOINT": "ce06-htc.cr.cnaf.infn.it:9619",
-            "OWNERS": ["padme008"]
-        },
+        #{
+        #    "ENDPOINT": "ce02-htc.cr.cnaf.infn.it:9619",
+        #    "OWNERS": ["padme008"]
+        #},
+        #{
+        #    "ENDPOINT": "ce03-htc.cr.cnaf.infn.it:9619",
+        #    "OWNERS": ["padme008"]
+        #},
+        #{
+        #    "ENDPOINT": "ce04-htc.cr.cnaf.infn.it:9619",
+        #    "OWNERS": ["padme008"]
+        #},
+        #{
+        #    "ENDPOINT": "ce05-htc.cr.cnaf.infn.it:9619",
+        #    "OWNERS": ["padme008"]
+        #},
+        #{
+        #    "ENDPOINT": "ce06-htc.cr.cnaf.infn.it:9619",
+        #    "OWNERS": ["padme008"]
+        #},
         {
             "ENDPOINT": "ce07-htc.cr.cnaf.infn.it:9619",
             "OWNERS": ["padme008"]
