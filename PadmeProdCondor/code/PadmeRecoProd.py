@@ -45,6 +45,12 @@ PADME_CE_NODE = {
     "CNAF": ("ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
 }
 
+# List of files which are known to give problems to PadmeReco
+PADME_FILES_TO_SKIP = [
+"/daq/2022/rawdata/run_0050072_20220708_130408/run_0050072_20220708_130408_lvl1_00_058.root",
+"/daq/2022/rawdata/run_0050400_20221108_212442/run_0050400_20221108_212442_lvl1_03_196.root"
+]
+
 # Initialize global parameters and set some default values
 PROD_RUN_NAME = ""
 PROD_NAME = ""
@@ -375,8 +381,10 @@ def main(argv):
             job_file_lists.append(job_file_list)
             job_file_list = []
         #file_url = "%s/daq/%s/rawdata/%s/%s"%(PADME_ROOT_URI["LNF"],PROD_YEAR,PROD_RUN_NAME,f)
-        file_url = "%s/daq/%s/rawdata/%s/%s"%(PROD_SOURCE_URI,PROD_YEAR,PROD_RUN_NAME,f)
-        job_file_list.append(file_url)
+        file_path = "/daq/%s/rawdata/%s/%s"%(PROD_YEAR,PROD_RUN_NAME,f)
+        if not file_path in PADME_FILES_TO_SKIP:
+            file_url = "%s%s"%(PROD_SOURCE_URI,file_path)
+            job_file_list.append(file_url)
     if job_file_list: job_file_lists.append(job_file_list)
 
     # Create production directory in the storage SRM (try 3 times before giving up)
