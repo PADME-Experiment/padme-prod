@@ -175,7 +175,7 @@ def show_long(endpoint,owners):
 
             r = re.match("^\s*Args\s+=\s+\"(.*)\"\s*$",l)
             if r:
-                rr = re.match("^-u job.py job.list\s+(\S+)\s+.*$",r.group(1))
+                rr = re.match("^-u job.py job.\S+\s+(\S+)\s+.*$",r.group(1))
                 if rr: prod = rr.group(1)
 
             r = re.match("^\s*JobStatus\s+=\s+(\d+)\s*$",l)
