@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python -u
 
 import os
 import sys
@@ -63,7 +63,8 @@ PROD_MYPROXY_LIFETIME = 720
 PROD_MYPROXY_NAME = ""
 PROD_MYPROXY_PASSWD = "myproxy"
 PROD_PROXY_VOMS = "vo.padme.org"
-PROD_PROXY_LIFETIME = 24
+#PROD_PROXY_LIFETIME = 24
+PROD_PROXY_LIFETIME = 288
 PROD_DEBUG = 0
 PROD_DESCRIPTION_FILE = ""
 PROD_USER_REQ = "Unknown"
@@ -318,23 +319,27 @@ def main(argv):
         print str(child)
         sys.exit(2)
 
-    # Get position of local proxy to be sent to Condor
-    voms_proxy_local = ""
-    voms_cmd = "voms-proxy-info"
-    if PROD_DEBUG: print "> %s"%voms_cmd
-    p = subprocess.Popen(shlex.split(voms_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    (out,err) = p.communicate()
-    if p.returncode == 0:
-        for l in iter(out.splitlines()):
-            if PROD_DEBUG > 1: print l
-            r = re.match("^\s*path\s+:\s+(\S+)\s*$",l)
-            if r:
-                voms_proxy_local = r.group(1)
-                break
-    if voms_proxy_local == "":
-        print "*** ERROR *** Unable get path to local VOMS proxy"
-        sys.exit(2)
-    print "- Local VOMS proxy at %s"%voms_proxy_local
+    ## Get position of local proxy to be sent to Condor
+    #voms_proxy_local = ""
+    #voms_cmd = "voms-proxy-info"
+    #if PROD_DEBUG: print "> %s"%voms_cmd
+    #p = subprocess.Popen(shlex.split(voms_cmd),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    #(out,err) = p.communicate()
+    #if p.returncode == 0:
+    #    for l in iter(out.splitlines()):
+    #        if PROD_DEBUG > 1: print l
+    #        r = re.match("^\s*path\s+:\s+(\S+)\s*$",l)
+    #        if r:
+    #            voms_proxy_local = r.group(1)
+    #            break
+    #if voms_proxy_local == "":
+    #    print "*** ERROR *** Unable get path to local VOMS proxy"
+    #    sys.exit(2)
+    #print "- Local VOMS proxy at %s"%voms_proxy_local
+
+    # Define name and position of proxy file to be used for this production.
+    # N.B. the file will be created by PadmeProdServer when the production is started
+    voms_proxy_local = "%s/%s/%s.voms"%(os.getcwd(),PROD_DIR,PROD_NAME)
 
     # Create production directory in the storage SRM (try 3 times before giving up)
     print "- Creating production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
@@ -412,12 +417,14 @@ def main(argv):
             jf.write("transfer_input_files = job.py,job.mac,%s\n"%voms_proxy_local)
             jf.write("transfer_output_files = job.sh\n")
             jf.write("when_to_transfer_output = on_exit\n")
+            jf.write("use_x509userproxy = true\n")
             jf.write("x509userproxy = %s\n"%voms_proxy_local)
             jf.write("MyProxyHost = %s:%d\n"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT))
             jf.write("MyProxyCredentialName = %s\n"%PROD_MYPROXY_NAME)
             jf.write("MyProxyPassword = %s\n"%PROD_MYPROXY_PASSWD)
             jf.write("MyProxyRefreshThreshold = 600\n")
-            jf.write("MyProxyNewProxyLifetime = 1440\n")
+            #jf.write("MyProxyNewProxyLifetime = 1440\n")
+            jf.write("MyProxyNewProxyLifetime = 17280\n")
             jf.write("queue\n")
 
         # Create job entry in DB and register job (jobList is only used in Reco jobs)

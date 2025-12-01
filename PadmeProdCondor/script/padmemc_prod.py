@@ -102,6 +102,12 @@ def main(argv):
     print "MC macro file %s"%macro_file
     print "Random seeds %s"%rndm_seeds
 
+    # Show info about available proxy
+    print "--- VOMS proxy information ---"
+    proxy_cmd = "voms-proxy-info --all"
+    print ">",proxy_cmd
+    rc = subprocess.call(proxy_cmd.split())
+
     # Extract random seeds
     r = re.match("(\d+),(\d+)",rndm_seeds)
     if r:

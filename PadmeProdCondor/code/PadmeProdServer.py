@@ -36,7 +36,8 @@ class PadmeProdServer:
         self.prod_check_delay_spread = 120
 
         # Define environment variables for Condor authentication
-        os.environ['_condor_SEC_CLIENT_AUTHENTICATION_METHODS'] = 'GSI'
+        #os.environ['_condor_SEC_CLIENT_AUTHENTICATION_METHODS'] = 'GSI'
+        os.environ['_condor_SEC_CLIENT_AUTHENTICATION_METHODS'] = 'SSL'
 
         self.start_production()
 

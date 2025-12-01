@@ -13,7 +13,8 @@ class ProxyHandler:
         self.debug = 0
 
         # Define VOMS proxy validity in hours
-        self.proxy_validity = 24
+        #self.proxy_validity = 24
+        self.proxy_validity = 288
 
         # If proxy validity is less than this time (seconds), renew it
         self.proxy_renew_threshold = 3600
@@ -66,7 +67,7 @@ class ProxyHandler:
                 print "- Creating new %s VOMS proxy from MyProxy server %s"%(self.voms_proxy,self.myproxy_server)
             else:
                 print "- Creating new standard VOMS proxy from MyProxy server %s"%self.myproxy_server
-        logon_cmd = "myproxy-logon --voms %s --pshost %s:%s --dn_as_username --credname %s --stdin_pass"%(self.proxy_vo,self.myproxy_server,self.myproxy_port,self.myproxy_name)
+        logon_cmd = "myproxy-logon --voms %s --pshost %s:%s --dn_as_username --credname %s --stdin_pass --proxy_lifetime %d"%(self.proxy_vo,self.myproxy_server,self.myproxy_port,self.myproxy_name, self.proxy_validity)
         if self.voms_proxy: logon_cmd += " --out %s"%self.voms_proxy
         if self.debug: print "> %s"%logon_cmd
         p = subprocess.Popen(shlex.split(logon_cmd),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
