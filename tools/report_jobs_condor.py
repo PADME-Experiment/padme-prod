@@ -14,8 +14,12 @@ SITE_INFO = {
         #    "ENDPOINT": "atlasce3.lnf.infn.it:9619",
         #    "OWNERS": ["padme003"]
         #},
+        #{
+        #    "ENDPOINT": "atlasce1.lnf.infn.it:9619",
+        #    "OWNERS": ["padme003"]
+        #}
         {
-            "ENDPOINT": "atlasce1.lnf.infn.it:9619",
+            "ENDPOINT": "tier2-ce2.lnf.infn.it:9619",
             "OWNERS": ["padme003"]
         }
     ],

@@ -10,7 +10,7 @@ import random
 
 from PadmeMCDB import PadmeMCDB
 from Logger import Logger
-from ProxyHandler import ProxyHandler
+#from ProxyHandler import ProxyHandler
 from ProdJob import ProdJob
 
 class PadmeProdServer:
@@ -19,9 +19,9 @@ class PadmeProdServer:
 
         self.db = PadmeMCDB()
 
-        # Create ProxyHandler and set its debug level. Later the voms_proxy file will be added.
-        self.ph = ProxyHandler()
-        self.ph.debug = debug
+        ## Create ProxyHandler and set its debug level. Later the voms_proxy file will be added.
+        #self.ph = ProxyHandler()
+        #self.ph.debug = debug
 
         self.debug = debug
 
@@ -57,7 +57,8 @@ class PadmeProdServer:
         self.prod_id = self.db.get_prod_id(self.prod_name)
     
         # Get some info about this prod
-        (dummy,prod_ce,prod_dir,proxy_info,prod_njobs) = self.db.get_prod_info(self.prod_id)
+        #(dummy,prod_ce,prod_dir,proxy_info,prod_njobs) = self.db.get_prod_info(self.prod_id)
+        (dummy,prod_ce,prod_dir,proxy_file,prod_njobs) = self.db.get_prod_info(self.prod_id)
 
         # Check if production dir exists
         if not os.path.isdir(prod_dir):
@@ -70,11 +71,16 @@ class PadmeProdServer:
         err_file_name = "%s/%s.err"%(prod_dir,self.prod_name)
         sys.stderr = Logger(err_file_name)
 
+        # Extract proxy filename and proxy lifetime (hours) from proxy_info
+        #(proxy_file,proxy_lifetime,dummy1,dummy2) = proxy_info.split(":")
+
         if self.debug:
             print "Production %s"%self.prod_name
             print "CE list: %s"%prod_ce
             print "Production directory: %s"%prod_dir
-            print "Proxy configuration: %s"%proxy_info
+            #print "Proxy configuration: %s"%proxy_info
+            print "Proxy file: %s"%proxy_file
+            #print "Proxy lifetime: %s"%proxy_lifetime
             print "Number of jobs: %d"%prod_njobs
 
         # Define name of control file: if found, this production will cleanly quit
@@ -90,12 +96,12 @@ class PadmeProdServer:
         ce_list = list(prod_ce.split(" "))
 
         # Configure proxy renewal service
-        r = re.match("^\s*(\S+):(\d+):(\S+):(\S+)\s*$",proxy_info)
-        if r:
-            (self.ph.myproxy_server,self.ph.myproxy_port,self.ph.myproxy_name,self.ph.myproxy_passwd) = r.groups()
-        else:
-            print "*** ERROR *** Unable to decode MyProxy info: \"%s\""%proxy_info
-            sys.exit(1)
+        #r = re.match("^\s*(\S+):(\d+):(\S+):(\S+)\s*$",proxy_info)
+        #if r:
+        #    (self.ph.myproxy_server,self.ph.myproxy_port,self.ph.myproxy_name,self.ph.myproxy_passwd) = r.groups()
+        #else:
+        #    print "*** ERROR *** Unable to decode MyProxy info: \"%s\""%proxy_info
+        #    sys.exit(1)
 
         # All checks are good: ready to start real production activities
         print "=== Starting Production %s ==="%self.prod_name
@@ -108,12 +114,16 @@ class PadmeProdServer:
             if ce_idx >= len(ce_list): ce_idx = 0
     
         # Define absolute path of VOMS proxy file which will be used for this production and pass it to the proxy handler
-        voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
-        if self.debug: print "VOMS proxy for this production: %s"%voms_proxy
-        self.ph.voms_proxy = voms_proxy
+        #voms_proxy = "%s/%s/%s.voms"%(os.getcwd(),prod_dir,self.prod_name)
+        #voms_proxy = proxy_file
+        #if self.debug: print "VOMS proxy for this production: %s"%voms_proxy
+        #self.ph.voms_proxy = voms_proxy
+        #self.ph.proxy_file = proxy_file
+        #self.ph.proxy_validity = int(proxy_lifetime)
+        #if self.debug: print "VOMS proxy for this production: %s (lifetime: %d hours)"%(self.ph.proxy_file,self.ph.proxy_validity)
 
         # Create voms proxy to be used for this production
-        self.ph.create_voms_proxy()
+        #self.ph.create_voms_proxy()
 
         # Main production loop
         undef_counter = 0
@@ -121,9 +131,9 @@ class PadmeProdServer:
         jobs_fail_old = 0
         while True:
     
-            # Renew proxy if needed
-            self.ph.renew_voms_proxy()
-    
+            ## Renew proxy if needed
+            #self.ph.renew_voms_proxy()
+
             # Check quit control file and send quit command to all jobs if found.
             if os.path.exists(quit_file):
                 print "*** Quit file %s found: quitting production ***"%quit_file

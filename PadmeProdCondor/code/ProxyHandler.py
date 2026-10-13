@@ -13,8 +13,7 @@ class ProxyHandler:
         self.debug = 0
 
         # Define VOMS proxy validity in hours
-        #self.proxy_validity = 24
-        self.proxy_validity = 288
+        self.proxy_validity = 24
 
         # If proxy validity is less than this time (seconds), renew it
         self.proxy_renew_threshold = 3600
@@ -22,14 +21,17 @@ class ProxyHandler:
         # VO to use
         self.proxy_vo = "vo.padme.org"
 
-        # Check if the VOMS proxy is stored in a non-standard position
-        self.voms_proxy = os.environ.get('X509_USER_PROXY','')
+        # Define default proxy location
+        self.proxy_file = os.environ.get('X509_USER_PROXY','')
 
-        # Initialize MyProxy information (no default)
-        self.myproxy_server = ""
-        self.myproxy_port = ""
-        self.myproxy_name = ""
-        self.myproxy_passwd = ""
+        # Get grid password from the environment
+        self.proxy_password = os.getenv("GLOBUS_PASSWORD",default="")
+
+        ## Initialize MyProxy information (no default)
+        #self.myproxy_server = ""
+        #self.myproxy_port = ""
+        #self.myproxy_name = ""
+        #self.myproxy_passwd = ""
 
     def renew_voms_proxy(self):
 
@@ -61,20 +63,40 @@ class ProxyHandler:
 
     def create_voms_proxy(self):
 
-        # Create a VOMS proxy from MyProxy server
-        if self.debug:
-            if self.voms_proxy:
-                print "- Creating new %s VOMS proxy from MyProxy server %s"%(self.voms_proxy,self.myproxy_server)
-            else:
-                print "- Creating new standard VOMS proxy from MyProxy server %s"%self.myproxy_server
-        logon_cmd = "myproxy-logon --voms %s --pshost %s:%s --dn_as_username --credname %s --stdin_pass --proxy_lifetime %d"%(self.proxy_vo,self.myproxy_server,self.myproxy_port,self.myproxy_name, self.proxy_validity)
-        if self.voms_proxy: logon_cmd += " --out %s"%self.voms_proxy
-        if self.debug: print "> %s"%logon_cmd
-        p = subprocess.Popen(shlex.split(logon_cmd),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-        (out,err) = p.communicate(input=self.myproxy_passwd)
-        if p.returncode == 0:
-            if self.debug: print out
+        ## Create a VOMS proxy from MyProxy server
+        #if self.debug:
+        #    if self.voms_proxy:
+        #        print "- Creating new %s VOMS proxy from MyProxy server %s"%(self.voms_proxy,self.myproxy_server)
+        #    else:
+        #        print "- Creating new standard VOMS proxy from MyProxy server %s"%self.myproxy_server
+        #logon_cmd = "myproxy-logon --voms %s --pshost %s:%s --dn_as_username --credname %s --stdin_pass --proxy_lifetime %d"%(self.proxy_vo,self.myproxy_server,self.myproxy_port,self.myproxy_name, self.proxy_validity)
+        #if self.voms_proxy: logon_cmd += " --out %s"%self.voms_proxy
+        #if self.debug: print "> %s"%logon_cmd
+        #p = subprocess.Popen(shlex.split(logon_cmd),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        #(out,err) = p.communicate(input=self.myproxy_passwd)
+        #if p.returncode == 0:
+        #    if self.debug: print out
+        #else:
+        #    print "  WARNING myproxy-logon returned error code %d"%p.returncode
+        #    print "- STDOUT -\n%s"%out
+        #    print "- STDERR -\n%s"%err
+
+        ## Create a VOMS proxy for this production
+        if self.proxy_file:
+            if self.debug: print "- Creating new VOMS proxy in "%self.voms_proxy
+            proxy_cmd = "voms-proxy-init --voms %s --valid %d:0 --out %s"%(self.proxy_vo,self.proxy_validity,self.proxy_file)
         else:
-            print "  WARNING myproxy-logon returned error code %d"%p.returncode
-            print "- STDOUT -\n%s"%out
-            print "- STDERR -\n%s"%err
+            if self.debug: print "- Creating new VOMS proxy in standard location"
+            proxy_cmd = "voms-proxy-init --voms %s --valid %d:0"%(self.proxy_vo,self.proxy_validity)
+        if self.debug: print ">",proxy_cmd
+        child = pexpect.spawn(proxy_cmd)
+        try:
+            child.expect("Enter GRID pass phrase for this identity:")
+            if PROD_DEBUG: print child.before
+            child.sendline(proxy_passwd)
+            #child.expect(pexpect.EOF)
+            #if PROD_DEBUG: print child.before
+        except:
+            print "*** ERROR *** Unable to create production proxy %s"%proxy_file
+            print str(child)
+            sys.exit(2)

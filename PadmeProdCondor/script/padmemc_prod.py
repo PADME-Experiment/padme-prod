@@ -104,6 +104,7 @@ def main(argv):
 
     # Show info about available proxy
     print "--- VOMS proxy information ---"
+    print "X509_USER_PROXY = %s"%os.environ['X509_USER_PROXY']
     proxy_cmd = "voms-proxy-info --all"
     print ">",proxy_cmd
     rc = subprocess.call(proxy_cmd.split())

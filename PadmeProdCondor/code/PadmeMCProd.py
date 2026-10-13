@@ -16,7 +16,7 @@ import getpass
 
 from PadmeProdServer import PadmeProdServer
 from PadmeMCDB import PadmeMCDB
-from ProxyHandler import ProxyHandler
+#from ProxyHandler import ProxyHandler
 
 # Get location of padme-prod software from PADME_PROD env variable
 # Default to ./padme-prod if not set
@@ -30,18 +30,19 @@ DB = PadmeMCDB()
 # SRMs to access PADME area on the LNF and CNAF storage systems
 PADME_SRM_URI = {
     "LNF": "root://atlasse.lnf.infn.it//dpm/lnf.infn.it/home/vo.padme.org",
-    "LNF2": "root://atlasse.lnf.infn.it//dpm/lnf.infn.it/home/vo.padme.org_scratch",
+    #"LNF2": "root://atlasse.lnf.infn.it//dpm/lnf.infn.it/home/vo.padme.org_scratch",
     "CNAF": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padmeTape",
     "CNAF2": "srm://storm-fe-archive.cr.cnaf.infn.it:8444/srm/managerv2?SFN=/padme"
 }
 
 # List of available submission sites and corresponding default Condor CE nodes
 PADME_CE_NODE = {
-    "LNF":  ("atlasce1.lnf.infn.it:9619",),
+    "LNF":  ("tier2-ce2.lnf.infn.it:9619",)
+    #"LNF":  ("atlasce1.lnf.infn.it:9619",),
     #"CNAF":  ("ce01-htc.cr.cnaf.infn.it:9619","ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619")
     #"CNAF":  ("ce02-htc.cr.cnaf.infn.it:9619","ce03-htc.cr.cnaf.infn.it:9619","ce04-htc.cr.cnaf.infn.it:9619","ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
     #"CNAF":  ("ce05-htc.cr.cnaf.infn.it:9619","ce06-htc.cr.cnaf.infn.it:9619","ce07-htc.cr.cnaf.infn.it:9619")
-    "CNAF":  ("ce07-htc.cr.cnaf.infn.it:9619",)
+    #"CNAF":  ("ce07-htc.cr.cnaf.infn.it:9619",)
 }
 
 # Initialize global parameters and set some default values
@@ -57,11 +58,11 @@ PROD_CE_PORT = 9619
 PROD_RUN_SITE = "CNAF"
 PROD_STORAGE_SITE = "CNAF2"
 PROD_MC_VERSION = ""
-PROD_MYPROXY_SERVER = "myproxy.cnaf.infn.it"
-PROD_MYPROXY_PORT = 7512
-PROD_MYPROXY_LIFETIME = 720
-PROD_MYPROXY_NAME = ""
-PROD_MYPROXY_PASSWD = "myproxy"
+#PROD_MYPROXY_SERVER = "myproxy.cnaf.infn.it"
+#PROD_MYPROXY_PORT = 7512
+#PROD_MYPROXY_LIFETIME = 720
+#PROD_MYPROXY_NAME = ""
+#PROD_MYPROXY_PASSWD = "myproxy"
 PROD_PROXY_VOMS = "vo.padme.org"
 #PROD_PROXY_LIFETIME = 24
 PROD_PROXY_LIFETIME = 288
@@ -102,8 +103,8 @@ def main(argv):
     global PROD_RUN_SITE
     global PROD_STORAGE_SITE
     global PROD_MC_VERSION
-    global PROD_MYPROXY_NAME
-    global PROD_MYPROXY_PASSWD
+    #global PROD_MYPROXY_NAME
+    #global PROD_MYPROXY_PASSWD
     global PROD_DEBUG
     global PROD_DESCRIPTION_FILE
     global PROD_USER_REQ
@@ -225,9 +226,9 @@ def main(argv):
             sys.exit(2)
         PROD_DIR = "%s/%s"%(version_dir,PROD_NAME)
 
-    # If long-term myproxy name was not specified, use production name
-    if PROD_MYPROXY_NAME == "":
-        PROD_MYPROXY_NAME = PROD_NAME
+    ## If long-term myproxy name was not specified, use production name
+    #if PROD_MYPROXY_NAME == "":
+    #    PROD_MYPROXY_NAME = PROD_NAME
 
     # If description file was not given, use default
     if not PROD_DESCRIPTION_FILE: PROD_DESCRIPTION_FILE = "description/%s.txt"%PROD_NAME
@@ -248,7 +249,7 @@ def main(argv):
     print "- PadmeMC macro file: %s"%PROD_MACRO_FILE
     print "- Storage SRM: %s"%PROD_SRM
     print "- Storage directory: %s"%PROD_STORAGE_DIR
-    print "- MyProxy name: %s"%PROD_MYPROXY_NAME
+    #print "- MyProxy name: %s"%PROD_MYPROXY_NAME
     if PROD_RANDOM_LIST:
         print "- Random seeds list: %s"%PROD_RANDOM_LIST
     else:
@@ -297,27 +298,27 @@ def main(argv):
         for j in range(0,PROD_NJOBS):
             random_seeds.append("%d,%d"%(random.randint(0,4294967295),random.randint(0,4294967295)))
 
-    # Create long-lived proxy on MyProxy server (also create a local proxy to talk to storage SRM)
-    grid_passwd = os.getenv("GLOBUS_PASSWORD",default="")
-    if grid_passwd == "":
-        grid_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
-    proxy_cmd = "myproxy-init --proxy_lifetime %d --cred_lifetime %d --voms %s --pshost %s --dn_as_username --credname %s --local_proxy"%(PROD_PROXY_LIFETIME,PROD_MYPROXY_LIFETIME,PROD_PROXY_VOMS,PROD_MYPROXY_SERVER,PROD_MYPROXY_NAME)
-    if PROD_DEBUG: print ">",proxy_cmd
-    child = pexpect.spawn(proxy_cmd)
-    try:
-        child.expect("Enter GRID pass phrase for this identity:")
-        if PROD_DEBUG: print child.before
-        child.sendline(grid_passwd)
-        child.expect("Enter MyProxy pass phrase:")
-        if PROD_DEBUG: print child.before
-        child.sendline(PROD_MYPROXY_PASSWD)
-        child.expect("Verifying - Enter MyProxy pass phrase:")
-        if PROD_DEBUG: print child.before
-        child.sendline(PROD_MYPROXY_PASSWD)
-    except:
-        print "*** ERROR *** Unable to register long-lived proxy on %s"%PROD_MYPROXY_SERVER
-        print str(child)
-        sys.exit(2)
+    ## Create long-lived proxy on MyProxy server (also create a local proxy to talk to storage SRM)
+    #grid_passwd = os.getenv("GLOBUS_PASSWORD",default="")
+    #if grid_passwd == "":
+    #    grid_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
+    #proxy_cmd = "myproxy-init --proxy_lifetime %d --cred_lifetime %d --voms %s --pshost %s --dn_as_username --credname %s --local_proxy"%(PROD_PROXY_LIFETIME,PROD_MYPROXY_LIFETIME,PROD_PROXY_VOMS,PROD_MYPROXY_SERVER,PROD_MYPROXY_NAME)
+    #if PROD_DEBUG: print ">",proxy_cmd
+    #child = pexpect.spawn(proxy_cmd)
+    #try:
+    #    child.expect("Enter GRID pass phrase for this identity:")
+    #    if PROD_DEBUG: print child.before
+    #    child.sendline(grid_passwd)
+    #    child.expect("Enter MyProxy pass phrase:")
+    #    if PROD_DEBUG: print child.before
+    #    child.sendline(PROD_MYPROXY_PASSWD)
+    #    child.expect("Verifying - Enter MyProxy pass phrase:")
+    #    if PROD_DEBUG: print child.before
+    #    child.sendline(PROD_MYPROXY_PASSWD)
+    #except:
+    #    print "*** ERROR *** Unable to register long-lived proxy on %s"%PROD_MYPROXY_SERVER
+    #    print str(child)
+    #    sys.exit(2)
 
     ## Get position of local proxy to be sent to Condor
     #voms_proxy_local = ""
@@ -337,9 +338,9 @@ def main(argv):
     #    sys.exit(2)
     #print "- Local VOMS proxy at %s"%voms_proxy_local
 
-    # Define name and position of proxy file to be used for this production.
-    # N.B. the file will be created by PadmeProdServer when the production is started
-    voms_proxy_local = "%s/%s/%s.voms"%(os.getcwd(),PROD_DIR,PROD_NAME)
+    ## Define name and position of proxy file to be used for this production.
+    ## N.B. the file will be created by PadmeProdServer when the production is started
+    #voms_proxy_local = "%s/%s/%s.voms"%(os.getcwd(),PROD_DIR,PROD_NAME)
 
     # Create production directory in the storage SRM (try 3 times before giving up)
     print "- Creating production dir %s on %s"%(PROD_STORAGE_DIR,PROD_SRM)
@@ -363,10 +364,32 @@ def main(argv):
         print "*** ERROR *** unable to create local production dir %s"%PROD_DIR
         sys.exit(2)
 
+    # Create long term proxy file for this production
+    prod_proxy_file = "%s/%s/%s.voms"%(os.getcwd(),PROD_DIR,PROD_NAME)
+    prod_proxy_passwd = os.getenv("GLOBUS_PASSWORD",default="")
+    if prod_proxy_passwd == "":
+        prod_proxy_passwd = getpass.getpass(prompt="Enter GRID pass phrase for this identity:")
+    proxy_cmd = "voms-proxy-init --voms %s --valid %d:0 --out %s"%(PROD_PROXY_VOMS,PROD_PROXY_LIFETIME,prod_proxy_file)
+    if PROD_DEBUG: print ">",proxy_cmd
+    child = pexpect.spawn(proxy_cmd)
+    try:
+        child.expect("Enter GRID pass phrase for this identity:")
+        if PROD_DEBUG: print child.before
+        child.sendline(prod_proxy_passwd)
+        #child.expect(pexpect.EOF)
+        #if PROD_DEBUG: print child.before
+    except:
+        print "*** ERROR *** Unable to create production proxy %s"%prod_proxy_file
+        print str(child)
+        sys.exit(2)
+    ## Format the filename for the voms proxy to be used within the job
+    #wn_proxy_file = "./%s.voms"%PROD_NAME
+
     # Create new production in DB
     print "- Creating new production in DB"
-    proxy_info = "%s:%d:%s:%s"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT,PROD_MYPROXY_NAME,PROD_MYPROXY_PASSWD)
-    prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,proxy_info,PROD_NJOBS)
+    #proxy_info = "%s:%d:%s:%s"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT,PROD_MYPROXY_NAME,PROD_MYPROXY_PASSWD)
+    #prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,proxy_info,PROD_NJOBS)
+    prodId = DB.create_mcprod(PROD_NAME,PROD_DESCRIPTION,PROD_USER_REQ,PROD_NEVENTS_REQ,PROD_CE,PROD_MC_VERSION,PROD_DIR,PROD_SRM,PROD_STORAGE_DIR,prod_proxy_file,PROD_NJOBS)
 
     # Create job structures
     print "- Creating directory structure for production jobs"
@@ -399,6 +422,14 @@ def main(argv):
             print "*** ERROR *** Unable to copy job macro file %s to %s"%(PROD_MACRO_FILE,jobCfgFile)
             sys.exit(2)
 
+        ## Copy common voms proxy file to job dir
+        #jobProxyFile = "%s/job.voms"%jobDir
+        #try:
+        #    shutil.copyfile(prod_proxy_file,jobProxyFile)
+        #except:
+        #    print "*** ERROR *** Unable to copy job proxy file %s to %s"%(prod_proxy_file,jobProxyFile)
+        #    sys.exit(2)
+
         # Get random seed pair from list
         jobSeeds = random_seeds.pop(0)
 
@@ -414,17 +445,24 @@ def main(argv):
             jf.write("error = job.err\n")
             jf.write("log = job.log\n")
             jf.write("should_transfer_files = yes\n")
-            jf.write("transfer_input_files = job.py,job.mac,%s\n"%voms_proxy_local)
+            #jf.write("transfer_input_files = job.py,job.mac,%s\n"%prod_proxy_file)
+            #jf.write("transfer_input_files = job.py,job.mac,job.voms\n")
+            jf.write("transfer_input_files = job.py,job.mac\n")
             jf.write("transfer_output_files = job.sh\n")
             jf.write("when_to_transfer_output = on_exit\n")
             jf.write("use_x509userproxy = true\n")
-            jf.write("x509userproxy = %s\n"%voms_proxy_local)
-            jf.write("MyProxyHost = %s:%d\n"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT))
-            jf.write("MyProxyCredentialName = %s\n"%PROD_MYPROXY_NAME)
-            jf.write("MyProxyPassword = %s\n"%PROD_MYPROXY_PASSWD)
-            jf.write("MyProxyRefreshThreshold = 600\n")
-            #jf.write("MyProxyNewProxyLifetime = 1440\n")
-            jf.write("MyProxyNewProxyLifetime = 17280\n")
+            jf.write("x509userproxy = %s\n"%prod_proxy_file)
+            jf.write("delegate_job_GSI_credentials_lifetime = %d\n"%(PROD_PROXY_LIFETIME*3600,))
+            #jf.write("environment = \"X509_USER_PROXY=%s\"\n"%wn_proxy_file)
+            #jf.write("environment = \"X509_USER_PROXY=./job.voms\"\n")
+            #jf.write("MyProxyHost = %s:%d\n"%(PROD_MYPROXY_SERVER,PROD_MYPROXY_PORT))
+            #jf.write("MyProxyCredentialName = %s\n"%PROD_MYPROXY_NAME)
+            #jf.write("MyProxyPassword = %s\n"%PROD_MYPROXY_PASSWD)
+            #jf.write("MyProxyRefreshThreshold = 600\n")
+            ##jf.write("MyProxyNewProxyLifetime = 1440\n")
+            #jf.write("MyProxyNewProxyLifetime = 17280\n")
+            jf.write("+SingularityImage = \"/install-server/singularity/cnaf-el7.sif\"\n")
+            jf.write("Requirements = HasSingularity\n")
             jf.write("queue\n")
 
         # Create job entry in DB and register job (jobList is only used in Reco jobs)
